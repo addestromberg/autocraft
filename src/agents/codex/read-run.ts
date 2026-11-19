@@ -13,7 +13,7 @@ const MAX_REPLY = 100_000;
 const TIMEOUT_MS = 120_000;
 const unavailable = "The Codex checkout runtime is unavailable";
 
-type ReadRequest = { model?: string; scope: CodexReadScope; signal?: AbortSignal };
+type ReadRequest = { model?: string; scope: CodexReadScope; signal?: AbortSignal; retained?: { home: string; threadId?: string } };
 type TurnOptions = { tools?: boolean; onProgress?: (line: string) => void };
 type Reply = { text: string };
 type ActiveTurn = {
@@ -23,7 +23,7 @@ type ActiveTurn = {
 };
 
 /** A job-owned ephemeral thread. The checkout and model are fixed at session startup. */
-export async function openCodexReadSession({ model, scope, signal }: ReadRequest) {
+export async function openCodexReadSession({ model, scope, signal, retained }: ReadRequest) {
   if ((await account("")).state !== "connected") throw new Error("Connect a Codex account in Accounts before running Codex");
   const { bin, options } = codexCommand();
   if (existsSync(join(options.cwd, "config.toml"))) throw new Error("The Codex account directory must not contain a CLI config for scoped checkout access");
@@ -42,7 +42,7 @@ export async function openCodexReadSession({ model, scope, signal }: ReadRequest
     "--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "skill_search",
     "--enable", "skip_host_skill_discovery", "-c", "suppress_unstable_features_warning=true",
     "-c", 'web_search="disabled"', "-c", 'cli_auth_credentials_store="file"',
-  ], { cwd, env: options.env, stdio: ["pipe", "pipe", "ignore"] });
+  ], { cwd, env: retained ? { ...options.env, HOME: retained.home, CODEX_HOME: retained.home } : options.env, stdio: ["pipe", "pipe", "ignore"] });
   const ready = Promise.withResolvers<void>();
   const closed = Promise.withResolvers<void>();
   let threadId: string | undefined;
@@ -104,12 +104,19 @@ export async function openCodexReadSession({ model, scope, signal }: ReadRequest
           send({ id: message.id, result: { success: !reply.isError, contentItems: [{ type: "inputText", text: reply.text }] } });
         } else if (message.id === 1 && message.result) {
           send({ method: "initialized" });
-          send({ id: 2, method: "thread/start", params: {
-            cwd, model, sandbox: "read-only", approvalPolicy: "never", ephemeral: true, environments: [],
-            dynamicTools: tools.definitions.map((tool) => ({ ...tool, type: "function", deferLoading: false })),
-          } });
+          const common = { cwd, model, sandbox: "read-only", approvalPolicy: "never" };
+          if (retained?.threadId) {
+            send({ id: 2, method: "thread/resume", params: { ...common, threadId: retained.threadId, excludeTurns: true } });
+          } else {
+            send({ id: 2, method: "thread/start", params: {
+              ...common, ephemeral: !retained, environments: [],
+              dynamicTools: tools.definitions.map((tool) => ({ ...tool, type: "function", deferLoading: false })),
+            } });
+          }
         } else if (message.id === 2 && typeof message.result?.thread?.id === "string") {
+          if (retained?.threadId && retained.threadId !== message.result.thread.id) return stop("Codex resumed a different thread");
           threadId = message.result.thread.id;
+          model = typeof message.result.model === "string" ? message.result.model : model;
           clearTimeout(startupTimer);
           ready.resolve();
         } else if (active && message.id === active.requestId && typeof message.result?.turn?.id === "string") {
@@ -155,7 +162,7 @@ export async function openCodexReadSession({ model, scope, signal }: ReadRequest
     throw error;
   }
   return {
-    model,
+    model, threadId: threadId!,
     async turn(prompt: string, options: TurnOptions = {}): Promise<Reply> {
       if (failure) throw failure;
       if (active) throw new Error("A Codex turn is already running in this session");

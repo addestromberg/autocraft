@@ -94,9 +94,9 @@ export type FixupDeps = {
 export function defaultDeps(): FixupDeps {
   return {
     querier: new Client(1000), exec, fetchDiff: ghDiff, now: () => new Date(), root: fixupDir(),
-    ask: async (db, input, checkout, tool, session) => (await askTextModel("fixup.patch", PROMPT.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout } : { checkout, check: tool, session }))?.text ?? null,
+    ask: async (db, input, checkout, tool, session) => (await askTextModel("fixup.patch", PROMPT.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout, session } : { checkout, check: tool, session }))?.text ?? null,
     check: async (db, input, checkout) => (await askTextModel("fixup.check", CHECK.models[0]!, input, db, { checkout }))?.text ?? null,
-    resolve: async (db, input, checkout, session) => (await askTextModel("fixup.conflict", CONFLICT.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout } : { checkout, session }))?.text ?? null,
+    resolve: async (db, input, checkout, session) => (await askTextModel("fixup.conflict", CONFLICT.models[0]!, input, db, { checkout, session }))?.text ?? null,
     checkout: (r, n, h) => checkoutForPr(r, n, h, console.log),
   };
 }

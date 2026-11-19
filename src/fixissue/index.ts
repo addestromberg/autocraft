@@ -22,6 +22,7 @@ import { leaseItem } from "../runner/leases.ts";
 import { TERMINAL, cancelTask, getTask } from "../build/tasks.ts";
 import { BuildError } from "../build/envs.ts";
 import { POOL_MAX, pool, type Usage } from "../classify/run.ts";
+import { dropSessions, parseSessions, sessionAsk, storeSessions, sweepSessions, type SessionAsk } from "../prepush/resume.ts";
 import { currentModelProvider, queueRoom, recordedModel, withWorkflowProvider } from "../agents/call.ts";
 import { runModelStep } from "../agents/step.ts";
 import { textStep } from "../agents/steps.ts";
@@ -81,7 +82,7 @@ export type FixIssueDeps = {
   /** Every git and gh command. */
   exec: Exec;
   /** The model's reply to a fixissue prompt, or null when it gave none. */
-  ask: (db: DatabaseSync, id: Id, input: TriageInput | PatchInput | FixIssueCheckInput, runId: string, checkout?: string, tool?: CheckTool) => Promise<string | null>;
+  ask: (db: DatabaseSync, id: Id, input: TriageInput | PatchInput | FixIssueCheckInput, runId: string, checkout?: string, tool?: CheckTool, session?: SessionAsk) => Promise<string | null>;
   /** Host directory with a read-only checkout of `sha` (reachable from `branch`) for the sandboxed model calls, or null to ask without tools. Absent: no tools. */
   checkout?: (repo: string, branch: string, sha: string) => Promise<string | null>;
   /** The head commit of the repo's default branch, or null. */
@@ -114,9 +115,9 @@ export function defaultDeps(): FixIssueDeps {
     exec, now: () => new Date(), root: fixupDir(), querier: new Client(500), fetchCrates: ghCrates, fetchPaths: ghPaths,
     mainHead: (repo, branch) => shaOf(`repos/${slugOf(repo)}/commits/${encodeURIComponent(branch)}`),
     checkout: (repo, branch, sha) => checkoutForCommit(repo, branch, sha, console.log),
-    ask: async (db, id, input, runId, checkout, tool) => {
+    ask: async (db, id, input, runId, checkout, tool, session) => {
       // One call: the caller reads the reply itself.
-      const r = await runModelStep(db, textStep<typeof input>(id), input, { checkout, check: currentModelProvider() === "codex" ? undefined : tool, usage: { run: runId, agent: `fixissue-${input.ref.replace(/[^A-Za-z0-9]/g, "-")}`, stage: "fixissue", items: (ok) => (ok ? 1 : 0) } });
+      const r = await runModelStep(db, textStep<typeof input>(id), input, { checkout, check: currentModelProvider() === "codex" ? undefined : tool, session, usage: { run: runId, agent: `fixissue-${input.ref.replace(/[^A-Za-z0-9]/g, "-")}`, stage: "fixissue", items: (ok) => (ok ? 1 : 0) } });
       return r.ok ? r.value : null;
     },
   };
@@ -147,7 +148,7 @@ export type AttemptRow = {
   repo: string; number: number; main_sha: string; text_hash: string; state: string; round: number;
   files: string | null; crate: string | null; crate_dir: string | null; patch: string | null; test_patch: string | null;
   head_task_id: number | null; base_task_id: number | null; retries: number; push_tries: number;
-  summary: string | null; pr_url: string | null; reason: string | null; size: string | null; format_diff?: string | null; created_at: string; updated_at: string;
+  session?: string | null; summary: string | null; pr_url: string | null; reason: string | null; size: string | null; format_diff?: string | null; created_at: string; updated_at: string;
 };
 
 const byUpdated = (a: AttemptRow, b: AttemptRow): number => (a.updated_at < b.updated_at ? -1 : a.updated_at > b.updated_at ? 1 : 0);
@@ -249,10 +250,10 @@ type Ctx = { db: DatabaseSync; d: FixIssueDeps; git: Git; log: (l: string) => vo
 
 /** Asks with a checkout of the base commit when there is one; the input then carries the repository path. */
 const checkoutOf = async (x: Ctx, base: { repo: string; sha: string }): Promise<string | undefined> => (await x.d.checkout?.(base.repo, branchOf(x.db, base.repo), base.sha)) ?? undefined;
-async function ask(x: Ctx, id: Id, input: TriageInput | PatchInput | FixIssueCheckInput, base: { repo: string; sha: string }, number?: number, have?: string, validate?: (patch: string) => string | null): Promise<string | null> {
+async function ask(x: Ctx, id: Id, input: TriageInput | PatchInput | FixIssueCheckInput, base: { repo: string; sha: string }, number?: number, have?: string, validate?: (patch: string) => string | null, session?: SessionAsk): Promise<string | null> {
   const checkout = have ?? await checkoutOf(x, base);
   const tool = id === "fixissue.patch" ? new CheckTool({ db: x.db, step: "fixissue", repo: base.repo, number: number ?? null, head: base.sha, base: base.sha, applies: applyCheck(x.git, x.d.root, base.sha, validate) }) : undefined;
-  return x.d.ask(x.db, id, checkout ? { ...input, repo_dir: REPO_PATH } : input, x.runId, checkout, tool);
+  return x.d.ask(x.db, id, checkout ? { ...input, repo_dir: REPO_PATH } : input, x.runId, checkout, tool, session);
 }
 
 /** The build scripts of `sha` from its manifests; null (every build.rs refused) when the commit cannot be fetched or read. */
@@ -425,28 +426,37 @@ async function patchRound(x: Ctx, r: AttemptRow): Promise<boolean> {
     crate: { name: r.crate!, dir: r.crate_dir! }, test_path: testPath, files: shown,
     ...(round > 1 && r.patch ? { previous: { patch: r.patch.slice(0, 60_000), failure: r.summary ?? "it did not pass" } } : {}),
   };
-  const reply = await ask(x, "fixissue.patch", input, { repo: r.repo, sha: r.main_sha }, r.number, checkout, (p) => refusal(validateFixPatch(p, files, testPath, r.crate_dir!, regressionName(r.number), scripts)));
-  if (reply === null) { roundFailed(db, d, row, round, "the model gave no answer", r.patch, log); return false; }
-  const v = validateFixPatch(reply, files, testPath, r.crate_dir!, regressionName(r.number), scripts);
-  if (!v.ok) { roundFailed(db, d, row, round, v.reason, reply.slice(0, 60_000), log); return false; }
-  const scratch = mkdtempSync(join(d.root, ".index-"));
-  let applied;
+  const session = currentModelProvider() === "codex" ? sessionAsk(r.session, "", [r.summary ?? "The worker did not accept the prior repair."], new Date(iso(d))) : undefined;
   try {
-    applied = await git.applyToTree(r.main_sha, v.patch, join(scratch, "index"));
+    const reply = await ask(x, "fixissue.patch", input, { repo: r.repo, sha: r.main_sha }, r.number, checkout, (p) => refusal(validateFixPatch(p, files, testPath, r.crate_dir!, regressionName(r.number), scripts)), session);
+    if (reply === null) { roundFailed(db, d, row, round, "the model gave no answer", r.patch, log); return false; }
+    const v = validateFixPatch(reply, files, testPath, r.crate_dir!, regressionName(r.number), scripts);
+    if (!v.ok) { roundFailed(db, d, row, round, v.reason, reply.slice(0, 60_000), log); return false; }
+    const scratch = mkdtempSync(join(d.root, ".index-"));
+    let applied;
+    try {
+      applied = await git.applyToTree(r.main_sha, v.patch, join(scratch, "index"));
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+    if (!applied.ok) { roundFailed(db, d, row, round, applied.reason, v.patch, log); return false; }
+    try {
+      const ids = tasksFor({ repo: r.repo, number: r.number, main_sha: r.main_sha, crate: r.crate!, test: regressionName(r.number) }, v.patch, v.testPatch).map((t) => createTask(db, t));
+      queueWarmBuild(db, r.repo, r.main_sha);
+      update(db, d, r, { state: "testing", session: session?.kept ? storeSessions({ "": session.kept }, new Date(iso(d))) : null, round, patch: v.patch, test_patch: v.testPatch, head_task_id: ids[0]!, base_task_id: ids[1]!, summary: null });
+      log(`  ${ref}: round ${round}: ${v.files.join(", ")} (${v.changed} lines); tasks ${ids.join(", ")} queued`);
+      return true;
+    } catch (e) {
+      if (!(e instanceof BuildError)) throw e;
+      log(`  ${ref}: tasks not queued: ${e.message}`);
+      return false;
+    }
   } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
-  if (!applied.ok) { roundFailed(db, d, row, round, applied.reason, v.patch, log); return false; }
-  try {
-    const ids = tasksFor({ repo: r.repo, number: r.number, main_sha: r.main_sha, crate: r.crate!, test: regressionName(r.number) }, v.patch, v.testPatch).map((t) => createTask(db, t));
-    queueWarmBuild(db, r.repo, r.main_sha);
-    update(db, d, r, { state: "testing", round, patch: v.patch, test_patch: v.testPatch, head_task_id: ids[0]!, base_task_id: ids[1]!, summary: null });
-    log(`  ${ref}: round ${round}: ${v.files.join(", ")} (${v.changed} lines); tasks ${ids.join(", ")} queued`);
-    return true;
-  } catch (e) {
-    if (!(e instanceof BuildError)) throw e;
-    log(`  ${ref}: tasks not queued: ${e.message}`);
-    return false;
+    const saved = attemptOf(db, r.repo, r.number)?.session;
+    if (r.session && r.session !== saved) dropSessions(r.session, parseSessions(saved));
+    if (session?.kept && parseSessions(saved)[""]?.dir !== session.kept.dir) {
+      dropSessions(storeSessions({ "": session.kept }, new Date(iso(d))));
+    }
   }
 }
 
@@ -470,6 +480,7 @@ export async function runFixIssue(db: DatabaseSync, params: FixIssueParams, log:
   }
   if (!fixIssueApprovalOf(db, repo)) throw new Error(`fixing issues in ${repo} is not approved`);
   mkdirSync(d.root, { recursive: true });
+  sweepSessions(db, new Date(iso(d)));
   const x: Ctx = { db, d, git: new Git(d.exec, d.root, repo), log, by: params.by, runId, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null } };
   const before = new Map(picks.map((c) => [c.number, attemptOf(db, repo, c.number)?.updated_at ?? null]));
   const stopRound = stopNote(params.stopping, log, `fixissue ${repo}: stopping, no new rounds started`);
@@ -547,6 +558,7 @@ export async function runFixIssueCollect(db: DatabaseSync, params: CollectParams
   ].sort(byUpdated).filter((r, i, all) => all.findIndex((o) => o.repo === r.repo && o.number === r.number) === i);
   s.looked = rows.length;
   if (params.dryRun) { log(`fixissue-collect: ${rows.length} pending; dry run`); return s; }
+  sweepSessions(db, new Date(iso(d)));
   const xOf = (repo: string): Ctx => ({ db, d, git: new Git(d.exec, d.root, repo), log, by: params.by, runId: s.runId, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null } });
 
   const stopped = stopNote(params.stopping, log, "fixissue-collect: stopping, no new attempts started");

@@ -18,9 +18,9 @@ import { scrub } from "../../runner/scrub.ts";
 import { VERIFY_OPTIONAL_TEST } from "../../security/prompts.ts";
 
 const supported = new Set<ClaudePromptId>(["classify.haiku", "priority.haiku", "dupes.haiku", "areas.haiku", "referee.sonnet", "lint.reference.haiku", "areas.suggest", "dupes.compare-issues.sonnet",
-  "verify.summary", "discord.search", "discord.issue-questions", "discord.issue-draft", "discord.signal.haiku", "discord.junk.haiku"]);
+  "verify.summary", "mainfix.classify", "discord.search", "discord.issue-questions", "discord.issue-draft", "discord.signal.haiku", "discord.junk.haiku"]);
 const checkoutPrompts = new Set<ClaudePromptId>(["decide.prepare", "review.opus", "premerge.opus", "postmerge.opus", "security.model", "security.area", "security.verify",
-  "fixissue.triage", "fixissue.patch", "fixissue.check", "fixup.patch", "fixup.check", "fixup.conflict",
+  "fixissue.triage", "fixissue.patch", "fixissue.check", "fixup.patch", "fixup.check", "fixup.conflict", "cifix.patch",
   "conversation.turn", "areas.propose", "dupes.compare-prs.opus"]);
 const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null };
 

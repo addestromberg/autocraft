@@ -14,8 +14,9 @@ import type { DatabaseSync } from "node:sqlite";
 import { commentApprovalOf } from "../act/approval.ts";
 import { absolute } from "../build/artifacts.ts";
 import { createTask, getTask, TERMINAL, warmKeyOf } from "../build/tasks.ts";
-import { askClaude, POOL_MAX, pool } from "../classify/run.ts";
-import { isHalt, queueRoom } from "../agents/call.ts";
+import { askTextModel } from "../agents/text-call.ts";
+import { POOL_MAX, pool } from "../classify/run.ts";
+import { currentModelProvider, isHalt, queueRoom, recordedModel, withWorkflowProvider } from "../agents/call.ts";
 import { pushesUnsettled } from "../push-outcomes.ts";
 import { audit } from "../dash/audit.ts";
 import { connect } from "../db.ts";
@@ -130,8 +131,8 @@ const codeNote: Note = { by: "model", kind: "comment", model: PROMPT.models[0] }
 export function defaultDeps(): CifixDeps {
   return {
     querier: new Client(1000), exec, fetchDiff: ghDiff, gh: ghExec, now: () => new Date(), root: fixupDir(),
-    ask: async (db, input, checkout, tool, session) => (await askClaude("cifix.patch", PROMPT.models[0]!, input, db, { checkout, check: tool, session }))?.text ?? null,
-    check: async (db, input, checkout) => (await askClaude("fixup.check", CHECK.models[0]!, input, db, { checkout }))?.text ?? null,
+    ask: async (db, input, checkout, tool, session) => (await askTextModel("cifix.patch", PROMPT.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout, session } : { checkout, check: tool, session }))?.text ?? null,
+    check: async (db, input, checkout) => (await askTextModel("fixup.check", CHECK.models[0]!, input, db, { checkout }))?.text ?? null,
     checkout: (r, n, h) => checkoutForPr(r, n, h, console.log),
   };
 }
@@ -322,6 +323,8 @@ async function guardTree(git: Git, head: string, tree: string): Promise<string |
 export async function patchFromFailure(db: DatabaseSync, d: Pick<CifixDeps, "ask" | "check" | "root">, r: PatchRequest): Promise<PatchResult> {
   const no = (state: "failed" | "refused", reason: string): PatchResult => ({ ok: false, state, reason });
   const { git, ref, title, repo, head, failure } = r;
+  const quiet = !!r.quiet || isQuiet(db, repo, r.number);
+  if (quiet && currentModelProvider() === "codex") return no("refused", "quiet PR excluded from Codex repair");
   const text = failure.checks.flatMap((x) => x.steps.map((s) => s.tail)).join("\n");
   const scripts = await buildScriptsAt(git, head);
   // Files a compiler error points at come first, then the files the diff changes; nothing else is editable. Test files are not editable by a CI fix.
@@ -344,7 +347,6 @@ export async function patchFromFailure(db: DatabaseSync, d: Pick<CifixDeps, "ask
     shown.push(v.file);
   }
   if (!shown.length) return no("failed", "the failure names no file a CI fix may edit");
-  const quiet = !!r.quiet || isQuiet(db, repo, r.number);
   const tool = new CheckTool({ db, step: "cifix", repo, number: r.number || null, head, base: r.base, applies: applyCheck(git, d.root, head, (p) => refusal(validatePatch(p, shown.map((s) => s.path), (x) => editable(x, scripts)))) });
   const reply = await d.ask(db, [{ ref, title, failure: logText(failure), ...(quiet ? { quiet } : {}), files: shown, diff: r.diffText, ...(r.previous ? { previous: r.previous } : {}), ...repoDir }], checkout, tool, r.session);
   if (reply === null) return no("failed", "the model gave no answer");
@@ -366,7 +368,7 @@ export async function patchFromFailure(db: DatabaseSync, d: Pick<CifixDeps, "ask
     if (reply2 === null) return "the patch check gave no answer";
     const verdict = parseCheck(reply2);
     if (!verdict.ok) return `the patch check gave no valid answer: ${verdict.error}`;
-    recordCheck(db, { kind: "fixup", repo, number: r.number, subject: head, patch, round: r.round, model: CHECK.models[0]!, check: verdict.check, at: r.at() });
+    recordCheck(db, { kind: "fixup", repo, number: r.number, subject: head, patch, round: r.round, model: recordedModel(CHECK.models[0]!), check: verdict.check, at: r.at() });
     audit(db, r.actor, "cifix-check", ref, { run: r.runId, head, verdict: verdict.check.verdict, reasons: verdict.check.reasons });
     return verdict.check.verdict === "reject" ? `rejected: Opus rejected the patch: ${checkLine(verdict.check)}` : null;
   };
@@ -875,7 +877,8 @@ export const commands = {
     summary: "cifix --repo R [--limit N] [--apply]: read the failing gate check of taken PRs and fix it (formatter run, patch checked by Opus, or the patch as a comment); dry run unless --apply",
     async run(args: string[]): Promise<void> {
       const f = parseArgs(args);
-      await runCifix(connect(), { repo: f.repo, limit: f.limit, dryRun: !f.apply });
+      const db = connect();
+      await withWorkflowProvider(db, "cifix", () => runCifix(db, { repo: f.repo, limit: f.limit, dryRun: !f.apply }));
     },
   },
   "cifix-rerun": {

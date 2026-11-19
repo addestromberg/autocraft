@@ -147,6 +147,8 @@ Standalone post-merge review, targeted pre-merge review, decision preparation, a
 
 The `fixissue`, `fixissue-collect`, and `fixup` provider overrides support ordinary repairs. Codex returns a patch from a pinned read-only checkout. AutoCraft validates the patch and the existing sandbox workers run the required checks. Across worker rounds, Codex can resume the same thread and model with the new check findings when the saved session is still valid for the pinned checkout and account. When that session expires or the account changes, the next thread receives the prior patch and findings. Retained session directories are private, and the authentication link is removed when each model call ends. The published repair still requires the existing approvals and current head. Quiet PR repairs stay outside this path.
 
+The `cifix` and `main-fix` provider overrides let Codex propose ordinary repairs from failed checks and classify default-branch failures. AutoCraft validates each patch and keeps the existing worker checks, operator approvals, and current-head checks before publication.
+
 #### Verify repository-aware Codex workflows in Incus
 
 Connect Codex through the development dashboard and point `AUTOCRAFT_CODEX_HOME` at its dedicated home. Use a development environment with no Claude accounts. The live checks create temporary synthetic repository and database fixtures and use the active Codex subscription.

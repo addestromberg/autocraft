@@ -143,6 +143,27 @@ Schema: `src/schema.sql`. Full-text search uses the FTS5 tables `items_fts` and 
 
 TypeScript on Node 24, run directly (type stripping, no build step): `node src/cli.ts <command>`. SQLite through the built-in `node:sqlite`. `pnpm check` type-checks; `pnpm test` runs the tests.
 
+#### Verify repository-aware Codex workflows in Incus
+
+Connect Codex through the development dashboard and point `AUTOCRAFT_CODEX_HOME` at its dedicated home. Use a development environment with no Claude accounts. The live checks create temporary synthetic repository and database fixtures and use the active Codex subscription.
+
+```sh
+env -u AUTOCRAFT_ACCOUNTS -u AUTOCRAFT_ACCOUNTS_ROOT node scripts/verify-codex-checkout.mjs
+env -u AUTOCRAFT_ACCOUNTS -u AUTOCRAFT_ACCOUNTS_ROOT node scripts/verify-codex-prepare.mjs
+```
+
+The checkout check verifies pinned Git content and the authorized issue snapshot, observes progress, and repeats the answer in a follow-up with tools disabled. The prepare check stores a scoped recommendation and leaves the decision unanswered for the operator.
+
+Run the local regressions for cancellation, refused tool access, stale heads, approval, and workflow routing.
+
+```sh
+pnpm check
+pnpm -C web build
+node --test test/codex-*.test.ts test/review-base-sec3.test.ts \
+  test/review-post-carried.test.ts test/premerge-review.test.ts test/security-scan.test.ts \
+  test/conversations.test.ts test/choices.test.ts test/discord-*.test.ts test/reference.test.ts
+```
+
 ## Dashboard server
 
 `autocraft dash serve` serves the dashboard over plain HTTP; a proxy in front provides HTTPS. Every page needs GitHub sign-in, and only logins on the access list get a session. Roles are `operator` (answers decisions, manages the whitelist, repos and access), `maintainer` (reads everything except accounts and access, and gives opinions and comments) and `viewer` (read-only, without prompts, logs or notes). Add the first operator from a shell: `autocraft access add <login> --operator`. Then manage the list on the Access page or with `autocraft access list|add|remove|role`.

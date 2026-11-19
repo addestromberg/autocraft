@@ -5,7 +5,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { isHalt } from "../agents/call.ts";
+import { currentModelProvider, isHalt, recordedModel } from "../agents/call.ts";
 import { REPO_PATH } from "../sandbox/command.ts";
 import { audit } from "../dash/audit.ts";
 import type { By } from "../core/gates.ts";
@@ -182,6 +182,10 @@ export async function askConflict(db: DatabaseSync, x: ConflictRun, c: ConflictC
 /** Merges the base branch into one PR and pushes the merge commit. */
 export async function mergeConflict(db: DatabaseSync, x: ConflictRun, c: ConflictCandidate): Promise<void> {
   const ref = refOf(c);
+  if (currentModelProvider() === "codex" && isQuiet(db, x.repo, c.number)) {
+    x.log(`  ${ref}: quiet PR excluded from Codex repair`);
+    return;
+  }
   let files: string[] = [];
   let baseSha: string | null = null;
   const fail = (state: "failed" | "refused" | "rejected", raw: string) => {
@@ -344,7 +348,7 @@ export async function mergeConflict(db: DatabaseSync, x: ConflictRun, c: Conflic
         if (checkReply === null) { fail("failed", `the patch check of ${f.path} gave no answer`); return; }
         const verdict = parseCheck(checkReply);
         if (!verdict.ok) { fail("failed", `the patch check of ${f.path} gave no valid answer: ${verdict.error}`); return; }
-        recordCheck(db, { kind: "fixup", repo: x.repo, number: c.number, subject: head, patch: JSON.stringify(sections), round: c.attempt, model: CHECK.models[0]!, check: verdict.check, at: x.at() });
+        recordCheck(db, { kind: "fixup", repo: x.repo, number: c.number, subject: head, patch: JSON.stringify(sections), round: c.attempt, model: recordedModel(CHECK.models[0]!), check: verdict.check, at: x.at() });
         audit(db, "fixup", "fixup-check", ref, { run: x.runId, head, verdict: verdict.check.verdict, reasons: verdict.check.reasons, conflict: true, path: f.path });
         if (verdict.check.verdict === "reject") { fail("rejected", `Opus rejected the resolution of ${f.path}: ${checkLine(verdict.check)}`); return; }
       }

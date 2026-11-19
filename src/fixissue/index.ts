@@ -22,7 +22,7 @@ import { leaseItem } from "../runner/leases.ts";
 import { TERMINAL, cancelTask, getTask } from "../build/tasks.ts";
 import { BuildError } from "../build/envs.ts";
 import { POOL_MAX, pool, type Usage } from "../classify/run.ts";
-import { queueRoom } from "../agents/call.ts";
+import { currentModelProvider, queueRoom, recordedModel, withWorkflowProvider } from "../agents/call.ts";
 import { runModelStep } from "../agents/step.ts";
 import { textStep } from "../agents/steps.ts";
 import { REPO_PATH } from "../sandbox/command.ts";
@@ -116,7 +116,7 @@ export function defaultDeps(): FixIssueDeps {
     checkout: (repo, branch, sha) => checkoutForCommit(repo, branch, sha, console.log),
     ask: async (db, id, input, runId, checkout, tool) => {
       // One call: the caller reads the reply itself.
-      const r = await runModelStep(db, textStep<typeof input>(id), input, { checkout, check: tool, usage: { run: runId, agent: `fixissue-${input.ref.replace(/[^A-Za-z0-9]/g, "-")}`, stage: "fixissue", items: (ok) => (ok ? 1 : 0) } });
+      const r = await runModelStep(db, textStep<typeof input>(id), input, { checkout, check: currentModelProvider() === "codex" ? undefined : tool, usage: { run: runId, agent: `fixissue-${input.ref.replace(/[^A-Za-z0-9]/g, "-")}`, stage: "fixissue", items: (ok) => (ok ? 1 : 0) } });
       return r.ok ? r.value : null;
     },
   };
@@ -457,8 +457,9 @@ export async function runFixIssue(db: DatabaseSync, params: FixIssueParams, log:
   const d = deps ?? defaultDeps();
   const runId = `fixissue-${repo}-${iso(d).replace(/[-:]/g, "").slice(0, 15)}`;
   const s: FixIssueSummary = { runId, repo, dryRun, started: [], queued: [], skipped: [], failed: [] };
-  const retries = plannedItems(db, "fixissue", { repo, bucket: "retry" }).map((p) => attemptOf(db, repo, p.facts.number)!).sort(byUpdated);
-  const cands = fixIssueApprovalOf(db, repo) ? plannedItems(db, "fixissue", { repo, bucket: "new" }).map((p) => candidateOf(db, p.facts.repo, p.facts.number, p.facts.score)) : [];
+  const retries = plannedItems(db, "fixissue", { repo, bucket: "retry" })
+    .filter((p) => currentModelProvider() !== "codex" || !p.facts.classification.flags.includes("security")).map((p) => attemptOf(db, repo, p.facts.number)!).sort(byUpdated);
+  const cands = fixIssueApprovalOf(db, repo) ? plannedItems(db, "fixissue", { repo, bucket: "new" }).filter((p) => currentModelProvider() !== "codex" || !p.facts.classification.flags.includes("security")).map((p) => candidateOf(db, p.facts.repo, p.facts.number, p.facts.score)) : [];
   const picks = params.limit === undefined ? cands : cands.slice(0, params.limit);
   log(`fixissue ${repo}: ${cands.length} candidate issues, ${retries.length} rounds due${fixIssueApprovalOf(db, repo) ? "" : " (fixing issues is not approved for this repo)"}`);
   if (dryRun) {
@@ -539,7 +540,8 @@ export async function runFixIssueCollect(db: DatabaseSync, params: CollectParams
   const s: CollectSummary = { runId: `fixissue-collect-${iso(d).replace(/[-:]/g, "").slice(0, 15)}`, looked: 0, passed: 0, opened: 0, failedRounds: 0, failed: 0, retried: 0, changed: 0 };
   // Attempts whose build tasks finished or whose fix passed, from the Plans; and those of issues that closed since (their tasks are cancelled below), which have no Plan.
   const rows = [
-    ...plannedItems(db, "fixissue-collect").map((p) => attemptOf(db, p.facts.repo, p.facts.number)!),
+    ...plannedItems(db, "fixissue-collect")
+      .filter((p) => currentModelProvider() !== "codex" || !p.facts.classification.flags.includes("security")).map((p) => attemptOf(db, p.facts.repo, p.facts.number)!),
     ...(db.prepare(`SELECT a.* FROM fix_attempts a JOIN items i ON i.repo = a.repo AND i.number = a.number
       WHERE a.state = 'testing' AND i.state <> 'OPEN' AND ${pilotSqlFor("a.repo", "a.number")} AND NOT ${backlogHeldSql("a")}`).all() as AttemptRow[]),
   ].sort(byUpdated).filter((r, i, all) => all.findIndex((o) => o.repo === r.repo && o.number === r.number) === i);
@@ -629,7 +631,7 @@ async function checkPatch(x: Ctx, r: AttemptRow): Promise<boolean> {
   if (reply === null) return failRound("the patch check gave no answer");
   const v = parseCheck(reply);
   if (!v.ok) return failRound(`the patch check gave no valid answer: ${v.error}`);
-  recordCheck(db, { kind: "fixissue", repo: r.repo, number: r.number, subject: r.main_sha, patch, round: r.round, model: CHECK.models[0]!, check: v.check, at: iso(d) });
+  recordCheck(db, { kind: "fixissue", repo: r.repo, number: r.number, subject: r.main_sha, patch, round: r.round, model: recordedModel(CHECK.models[0]!), check: v.check, at: iso(d) });
   audit(db, ACTOR, "fixissue-check", refOf(r), { run: x.runId, round: r.round, verdict: v.check.verdict, reasons: v.check.reasons });
   if (v.check.verdict === "reject") return failRound(`Opus rejected the patch: ${checkLine(v.check)}`);
   return true;
@@ -817,14 +819,16 @@ export const commands = {
     summary: "fixissue --repo R [--limit N] [--apply]: triage open bugfix issues, write a fix and a regression test, queue the sandbox tasks (dry run unless --apply)",
     async run(args: string[]): Promise<void> {
       const f = parseArgs(args);
-      await runFixIssue(connect(), { repo: f.repo, limit: f.limit, dryRun: !f.apply });
+      const db = connect();
+      await withWorkflowProvider(db, "fixissue", () => runFixIssue(db, { repo: f.repo, limit: f.limit, dryRun: !f.apply }));
     },
   },
   "fixissue-collect": {
     summary: "fixissue-collect [--apply]: read the finished sandbox tasks of fix attempts; open the PR of a passing fix (dry run unless --apply)",
     async run(args: string[]): Promise<void> {
       if (args.some((a) => a !== "--apply")) throw new Error("options: --apply");
-      await runFixIssueCollect(connect(), { dryRun: !args.includes("--apply") });
+      const db = connect();
+      await withWorkflowProvider(db, "fixissue-collect", () => runFixIssueCollect(db, { dryRun: !args.includes("--apply") }));
     },
   },
   "fixissue-approval": {

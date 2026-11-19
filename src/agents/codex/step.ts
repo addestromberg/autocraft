@@ -13,8 +13,9 @@ import { scrub } from "../../runner/scrub.ts";
 import { VERIFY_OPTIONAL_TEST } from "../../security/prompts.ts";
 
 const supported = new Set<ClaudePromptId>(["classify.haiku", "priority.haiku", "dupes.haiku", "areas.haiku", "referee.sonnet", "lint.reference.haiku", "areas.suggest", "dupes.compare-issues.sonnet",
-  "discord.search", "discord.issue-questions", "discord.issue-draft", "discord.signal.haiku", "discord.junk.haiku"]);
+  "verify.summary", "discord.search", "discord.issue-questions", "discord.issue-draft", "discord.signal.haiku", "discord.junk.haiku"]);
 const checkoutPrompts = new Set<ClaudePromptId>(["decide.prepare", "review.opus", "premerge.opus", "postmerge.opus", "security.model", "security.area", "security.verify",
+  "fixissue.triage", "fixissue.patch", "fixissue.check", "fixup.patch", "fixup.check", "fixup.conflict",
   "conversation.turn", "areas.propose", "dupes.compare-prs.opus"]);
 const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null };
 
@@ -24,7 +25,7 @@ export async function runCodexStep<K extends ClaudePromptId>(id: K, input: Claud
     throw new Error(`Codex is selected but does not yet support ${id}`);
   }
   if (modelCallStopping()) throw new StoppedError("the job is stopping");
-  if (id.startsWith("security.") && !opts.checkout) throw new Error(`Codex requires a scoped checkout for ${id}`);
+  if ((id.startsWith("security.") || id === "fixup.patch" || id === "fixup.conflict" || id === "fixissue.patch") && !opts.checkout) throw new Error(`Codex requires a scoped checkout for ${id}`);
   const model = currentCodexModel();
   const rendered = renderClaude(id, input);
   const prompt = id === "security.verify" ? rendered.replace(VERIFY_OPTIONAL_TEST, "Base the verification on static evidence and omit proposed_test.") : rendered;

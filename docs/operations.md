@@ -145,6 +145,8 @@ TypeScript on Node 24, run directly (type stripping, no build step): `node src/c
 
 Standalone post-merge review, targeted pre-merge review, decision preparation, and referee classification use the corresponding Pipeline provider and Codex model settings. Dry runs keep their existing behavior.
 
+The `fixissue`, `fixissue-collect`, and `fixup` provider overrides support ordinary repairs. Codex returns a patch from a pinned read-only checkout. AutoCraft validates the patch and the existing sandbox workers run the required checks. Across worker rounds, Codex receives the prior patch and check findings in a fresh thread. The published repair still requires the existing approvals and current head. Quiet PR repairs stay outside this path.
+
 #### Verify repository-aware Codex workflows in Incus
 
 Connect Codex through the development dashboard and point `AUTOCRAFT_CODEX_HOME` at its dedicated home. Use a development environment with no Claude accounts. The live checks create temporary synthetic repository and database fixtures and use the active Codex subscription.

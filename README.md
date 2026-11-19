@@ -206,6 +206,7 @@ For Codex adapter development in Incus, follow the [local verification and PR ch
 Use `classify --classifier codex` to classify one mirrored issue with the connected Codex account. Existing workflows continue to use their configured providers.
 See [Codex parity](docs/codex-parity.md) for the workflow inventory and acceptance criteria.
 Operators can set the default model provider and workflow overrides on the Pipeline page. Scheduled Codex support is being rolled out workflow by workflow.
+Codex model settings are separate from Claude's and can use the connected account's default.
 
 | Path | Contents |
 |---|---|

@@ -1683,6 +1683,7 @@ export type AgentRunState = "running" | "done" | "failed";
 export type ModelProvider = "claude" | "codex";
 export type ModelProviderSettings = { defaultProvider: ModelProvider; workflows: Record<string, ModelProvider> };
 export type ModelProviderConfig = ModelProviderSettings & { availableWorkflows: string[] };
+export type CodexModelSettings = { defaultModel: string | null; workflows: Record<string, string> };
 export type AgentRun = {
   id: number;
   jobId: number | null;

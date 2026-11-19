@@ -306,10 +306,13 @@ export function ModelProviderControl() {
 function ProviderSettingsForm() {
   const api = useApi();
   const query = useQuery("model-provider-config", (a) => a.pipeline.providerConfig());
+  const modelQuery = useQuery("codex-model-config", (a) => a.pipeline.codexModels());
   const write = useWrite();
   const [workflow, setWorkflow] = useState("");
+  const [models, setModels] = useState<string[] | null>();
   const config = query.data;
   const value = workflow ? config?.workflows[workflow] ?? "" : config?.defaultProvider ?? "claude";
+  const model = workflow ? modelQuery.data?.workflows[workflow] : modelQuery.data?.defaultModel;
   return (
     <Block title="Model provider">
       {config && <div className="flex flex-wrap items-end gap-3">
@@ -332,8 +335,27 @@ function ProviderSettingsForm() {
           </Select>
         </label>
       </div>}
+      {modelQuery.data && <form className="mt-3 flex flex-wrap items-end gap-3" onSubmit={(event) => {
+        event.preventDefault();
+        const value = String(new FormData(event.currentTarget).get("model") ?? "").trim() || null;
+        void write.run("model", () => api.pipeline.setCodexModel(workflow, value)).then(() => modelQuery.refetch());
+      }}>
+        <label className="flex flex-col gap-1 text-sm">
+          Codex model
+          <TextInput key={`${workflow}:${model ?? ""}`} name="model" defaultValue={model ?? ""} list="codex-model-options"
+            maxLength={128} placeholder={workflow ? "Use instance default" : "Use account default"} />
+        </label>
+        <datalist id="codex-model-options">
+          {models?.map((id) => <option key={id} value={id} />)}
+        </datalist>
+        <Button size="sm" type="submit" loading={write.busy === "model"}>Save model</Button>
+        <Button size="sm" type="button" variant="ghost" loading={write.busy === "models"} onClick={() =>
+          void write.run("models", async () => setModels((await api.pipeline.listCodexModels()).models))
+        }>Load available models</Button>
+        {models === null && <span className="text-sm text-ink/60">Model list unavailable. Enter a model ID to choose one.</span>}
+      </form>}
       <p className="mt-2 text-sm text-ink/60">New jobs use this setting. Workflows awaiting Codex support report an error when Codex is selected.</p>
-      <ErrorLine error={write.error ?? query.error?.message} />
+      <ErrorLine error={write.error ?? query.error?.message ?? modelQuery.error?.message} />
     </Block>
   );
 }

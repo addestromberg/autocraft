@@ -1,6 +1,6 @@
 // The Pipeline page on fake data: a few steps, jobs in every state and recent syncs.
 import type { Api } from "../client";
-import type { Job, JobDetail, ModelProviderConfig, PipelineOverview, PipelineState, PipelineStep, StageLimit, User } from "../types";
+import type { CodexModelSettings, Job, JobDetail, ModelProviderConfig, PipelineOverview, PipelineState, PipelineStep, StageLimit, User } from "../types";
 import { NOW, REPOS } from "./fixtures";
 import { outside, releaseAuthorHeld, resumeSurge } from "./outsideMock";
 
@@ -143,9 +143,19 @@ export function createPipelineMock(me: User, changed: () => void): Pick<Api, "pi
     return j;
   };
   const providerConfig: ModelProviderConfig = { defaultProvider: "claude", workflows: {}, availableWorkflows: ["classify-new", "classify-all", "prioritize", "dupes"] };
+  const codexModels: CodexModelSettings = { defaultModel: null, workflows: {} };
   return {
     pipeline: {
       providerConfig: () => wait(providerConfig),
+      codexModels: () => wait(codexModels),
+      listCodexModels: () => wait({ models: null }),
+      setCodexModel: (workflow, model) => {
+        requireOperator();
+        if (!workflow) codexModels.defaultModel = model;
+        else if (model === null) delete codexModels.workflows[workflow];
+        else codexModels.workflows[workflow] = model;
+        return wait(codexModels);
+      },
       setProvider: (workflow, provider) => {
         requireOperator();
         if (workflow && provider) providerConfig.workflows[workflow] = provider;

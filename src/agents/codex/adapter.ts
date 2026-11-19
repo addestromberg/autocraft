@@ -42,7 +42,7 @@ export const runCodex: TextAgentAdapter<CodexRequest, CodexReply> = async ({ pro
     ];
     const stdout = await new Promise<string>((resolve, reject) => {
       const child = execFile(bin, args, { cwd, env: options.env, signal, timeout: 120_000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, output) => {
-        if (error) reject(new Error(signal?.aborted ? "Codex execution cancelled" : "Codex execution failed"));
+        if (error) reject(new Error(signal?.aborted ? "Codex execution cancelled" : model ? `Codex could not run model ${model}; check that the connected account can use it` : "Codex execution failed"));
         else resolve(output);
       });
       child.stdin?.on("error", () => {});

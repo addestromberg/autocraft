@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { takeCodexSlot } from "../agents/codex/queue.ts";
 import { runCodex } from "../agents/codex/adapter.ts";
 import { selectedCodexModel } from "../agents/codex/models.ts";
 import { finishRun, insertRun } from "../agents/runs.ts";
@@ -19,8 +20,11 @@ export async function classifyWithCodex(db: DatabaseSync, runId: string, item: I
     jobId: null, step, stage: stageOfStep(step)!.runStage, promptId, promptVersion: promptVersion(promptId),
     provider: "codex", model: model ?? "codex", accountId: null, items: [{ repo: item.repo, number: item.number }], prompt,
   });
+  const controller = new AbortController();
+  let release: (() => void) | undefined;
   try {
-    const { text } = await runCodex({ prompt, model });
+    release = await takeCodexSlot(db, promptId, controller);
+    const { text } = await runCodex({ prompt, model, signal: controller.signal });
     const { verdicts } = parseHaikuReply(text, [refOf(item)]);
     const verdict = verdicts[0];
     if (!verdict) throw new Error("Codex returned no valid classification for the issue");
@@ -31,5 +35,7 @@ export async function classifyWithCodex(db: DatabaseSync, runId: string, item: I
     const message = `${step}: ${error instanceof Error ? error.message : "Codex classification failed"}`;
     finishRun(db, id, { state: "failed", error: message });
     throw new Error(`Codex run #${id}: ${message}`);
+  } finally {
+    release?.();
   }
 }

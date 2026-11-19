@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TextAgentAdapter } from "../types.ts";
+import { codexFailure } from "./errors.ts";
 import { account, codexCommand } from "./account.ts";
 
 type CodexRequest = { prompt: string; model?: string; signal?: AbortSignal; timeoutMs?: number; images?: string[] };
@@ -49,8 +50,8 @@ export const runCodex: TextAgentAdapter<CodexRequest, CodexReply> = async ({ pro
       ...(model ? ["--model", model] : []), ...(images?.length ? [...images.map((file) => `--image=${file}`), "--"] : []), "-",
     ];
     const stdout = await new Promise<string>((resolve, reject) => {
-      const child = execFile(bin, args, { cwd, env: options.env, signal, timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, output) => {
-        if (error) reject(new Error(signal?.aborted ? "Codex execution cancelled" : error.killed ? "Codex execution timed out" : model ? `Codex could not run model ${model}; check that the connected account can use it` : "Codex execution failed"));
+      const child = execFile(bin, args, { cwd, env: options.env, signal, timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, output, stderr) => {
+        if (error) reject(new Error(signal?.aborted ? "Codex execution cancelled" : error.killed ? "Codex execution timed out" : codexFailure(output + "\n" + stderr) ?? (model ? `Codex could not run model ${model}; check that the connected account can use it` : "Codex execution failed")));
         else resolve(output);
       });
       child.stdin?.on("error", () => {});

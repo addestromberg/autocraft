@@ -270,6 +270,8 @@ export function createHttpApi(): Api {
       run: (step, params) => post("/api/pipeline/jobs", { step, params }),
       cancel: (id) => post(`/api/pipeline/jobs/${id}/cancel`),
       state: () => get("/api/pipeline/state"),
+      providerConfig: () => get("/api/pipeline/model-provider"),
+      setProvider: (workflow, provider) => put("/api/pipeline/model-provider", { workflow, provider }),
       setEnabled: (enabled) => put("/api/pipeline/state", { enabled }),
       setLimit: (step, limit) => put(`/api/pipeline/limits/${encodeURIComponent(step)}`, limit),
       resetLimit: (step) => post(`/api/pipeline/limits/${encodeURIComponent(step)}/reset`),

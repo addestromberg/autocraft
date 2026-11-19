@@ -19,11 +19,11 @@ import { pruneTasks, reapLost } from "../build/tasks.ts";
 import { pruneBench } from "../nightly/index.ts";
 import { prunePlanHistory } from "../core/plan-cache.ts";
 import { checkPendingUpdate } from "../build/worker-update.ts";
-import { endJob, JOB_KEEP_MS, now, pruneJobs, RUNNER_STOPPED } from "./jobs.ts";
+import { endJob, JOB_KEEP_MS, jobProvider, now, pruneJobs, RUNNER_STOPPED } from "./jobs.ts";
 import { advanceSecurityFixes, autoFixConfirmed } from "../security/actions.ts";
 import { advanceScanTests } from "../security/scantest.ts";
 import { OffThread } from "./offthread.ts";
-import { loadSteps, modelsOf, usesClaude, type Params } from "./steps.ts";
+import { loadSteps, type Params } from "./steps.ts";
 import { jobBlock } from "./concurrency.ts";
 import { queueRoom } from "../agents/call.ts";
 import { stepDeadlineMin, stepNoProgressMin } from "./deadlines.ts";
@@ -393,7 +393,7 @@ export class Runner {
       }
       if (this.blocked(steps, q.id)) continue;
       let claude = false;
-      try { claude = usesClaude(modelsOf(step, JSON.parse(q.params) as Params)); } catch { /* params are checked when the job runs */ }
+      try { claude = jobProvider(this.db, step, JSON.parse(q.params) as Params) === "claude"; } catch { /* params are checked when the job runs */ }
       const cls = step.priority ?? 0;
       if (claude && !this.db.prepare("SELECT 1 FROM jobs WHERE step = ? AND state = 'running' LIMIT 1").get(step.name)) {
         // Nothing of the step runs: it starts anyway, and takes a slot of the room.
@@ -425,8 +425,14 @@ export class Runner {
     this.db.exec("BEGIN IMMEDIATE");
     let claimed: number | bigint;
     try {
-      claimed = this.blocked(steps, id) ? 0
-        : this.db.prepare("UPDATE jobs SET state = 'running', started_at = ?, log_path = ? WHERE id = ? AND state = 'queued'").run(now(), logPath, id).changes;
+      const step = steps.get(stepName)!;
+      const row = this.db.prepare("SELECT params FROM jobs WHERE id = ?").get(id) as { params: string } | undefined;
+      let provider = null;
+      if (row) {
+        try { provider = jobProvider(this.db, step, JSON.parse(row.params) as Params); } catch { /* validated by the child */ }
+      }
+      claimed = !row || this.blocked(steps, id) ? 0
+        : this.db.prepare("UPDATE jobs SET state = 'running', started_at = ?, log_path = ?, model_provider = ? WHERE id = ? AND state = 'queued'").run(now(), logPath, provider, id).changes;
       this.db.exec("COMMIT");
     } catch (e) {
       this.db.exec("ROLLBACK");

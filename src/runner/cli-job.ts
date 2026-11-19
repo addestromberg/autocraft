@@ -8,7 +8,7 @@ import { closeSync, createWriteStream, mkdirSync, openSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { dbPath } from "../db.ts";
 import { cliGate, jobLimit } from "./autopilot.ts";
-import { checkRequest, endJob, JobError, now } from "./jobs.ts";
+import { checkRequest, endJob, JobError, jobProvider, now } from "./jobs.ts";
 import { logsDir } from "./runner.ts";
 import { loadSteps, type StepDef } from "./steps.ts";
 
@@ -64,8 +64,8 @@ export async function runCliJob(db: DatabaseSync, req: CliRequest): Promise<numb
       mkdirSync(logsDir(), { recursive: true });
       const t = now();
       const repo = typeof full.repo === "string" ? full.repo : null;
-      job = Number(db.prepare("INSERT INTO jobs (step, params, repo, requested_by, requested_at, state, started_at) VALUES (?, ?, ?, 'cli', ?, 'running', ?)")
-        .run(step.name, JSON.stringify(full), repo, t, t).lastInsertRowid);
+      job = Number(db.prepare("INSERT INTO jobs (step, params, repo, requested_by, requested_at, state, started_at, model_provider) VALUES (?, ?, ?, 'cli', ?, 'running', ?, ?)")
+        .run(step.name, JSON.stringify(full), repo, t, t, jobProvider(db, step, params)).lastInsertRowid);
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");

@@ -1,6 +1,6 @@
 // The Pipeline page on fake data: a few steps, jobs in every state and recent syncs.
 import type { Api } from "../client";
-import type { Job, JobDetail, PipelineOverview, PipelineState, PipelineStep, StageLimit, User } from "../types";
+import type { Job, JobDetail, ModelProviderConfig, PipelineOverview, PipelineState, PipelineStep, StageLimit, User } from "../types";
 import { NOW, REPOS } from "./fixtures";
 import { outside, releaseAuthorHeld, resumeSurge } from "./outsideMock";
 
@@ -142,8 +142,17 @@ export function createPipelineMock(me: User, changed: () => void): Pick<Api, "pi
     if (!j) throw new Error(`no job ${id}`);
     return j;
   };
+  const providerConfig: ModelProviderConfig = { defaultProvider: "claude", workflows: {}, availableWorkflows: ["classify-new", "classify-all", "prioritize", "dupes"] };
   return {
     pipeline: {
+      providerConfig: () => wait(providerConfig),
+      setProvider: (workflow, provider) => {
+        requireOperator();
+        if (workflow && provider) providerConfig.workflows[workflow] = provider;
+        else if (workflow) delete providerConfig.workflows[workflow];
+        else if (provider) providerConfig.defaultProvider = provider;
+        return wait(providerConfig);
+      },
       overview: () => wait(overview()),
       jobs: (f) => {
         const list = jobs.filter((j) => (!f.step || j.step === f.step) && (!f.state || j.state === f.state));

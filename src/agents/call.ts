@@ -6,13 +6,15 @@ import { accountHasRoom, chooseAccount, freeSlots, RUN_SLOT_MS, type Choice } fr
 import { insertRun, onRunEnd, type RunStart } from "./runs.ts";
 import { scrubError } from "./text.ts";
 import { levelBand } from "../rank/level.ts";
+import type { ModelProvider } from "../../web/src/api/types.ts";
 
 /** Set by the job process: which job and step the calls belong to, and whether a cancel was asked. */
-export type CallContext = { jobId: number; step: string; stage: number; /** Queue class of the step (StepDef.priority). */ class?: 0 | 1 | 2; /** The job's repo param. */ repo?: string; cancelled(): boolean; /** True once the job is cancelled or the pipeline is switched off: no new model call starts. */ stopping?(): boolean };
+export type CallContext = { jobId: number; step: string; stage: number; modelProvider?: ModelProvider; /** Queue class of the step (StepDef.priority). */ class?: 0 | 1 | 2; /** The job's repo param. */ repo?: string; cancelled(): boolean; /** True once the job is cancelled or the pipeline is switched off: no new model call starts. */ stopping?(): boolean };
 let context: CallContext | null = null;
 export const setCallContext = (c: CallContext | null): void => void (context = c);
 /** The job this process runs, or null outside a job. */
 export const currentJobId = (): number | null => context?.jobId ?? null;
+export const currentModelProvider = (): ModelProvider => context?.modelProvider ?? "claude";
 /** The job and step this process runs, or null outside a job. */
 export const currentJob = (): { id: number; step: string } | null => (context ? { id: context.jobId, step: context.step } : null);
 

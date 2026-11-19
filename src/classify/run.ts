@@ -8,7 +8,7 @@ import type { ItemRef } from "../../web/src/api/types.ts";
 import { createHash } from "node:crypto";
 import { jevParallel } from "../agents/accounts.ts";
 import { jevAvailable, jevEnv, jevFailure, markJevUnavailable, markJevWorking } from "../agents/jev.ts";
-import { accountConfigDir, queueRoom, startClaudeRun, startJevRun, tryStartFollowUp, isHalt, type Started } from "../agents/call.ts";
+import { accountConfigDir, currentModelProvider, queueRoom, startClaudeRun, startJevRun, tryStartFollowUp, isHalt, type Started } from "../agents/call.ts";
 import { touchStore, type SessionAsk } from "../prepush/resume.ts";
 import { finishRun, packText, setRunProgress } from "../agents/runs.ts";
 import { clockLine, saveTools, type ToolClock } from "../agents/tools.ts";
@@ -364,6 +364,7 @@ export function needsClippy(tool: Pick<CheckTool, "ran">, reply: string): boolea
 }
 
 export async function askClaude<K extends ClaudePromptId>(id: K, model: string, input: ClaudeInput[K], db: DatabaseSync, opts: AskOptions = {}): Promise<LintedReply | null> {
+  if (currentModelProvider() === "codex") throw new Error(`Codex is selected but does not yet support ${id}`);
   const ses = opts.session;
   if (ses?.resume) {
     const r = await askOnce(id, model, input, db, opts);

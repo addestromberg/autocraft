@@ -1177,6 +1177,8 @@ export interface Job {
   usage: JobUsage | null;
   /** Models the job's step uses, e.g. ["jev", "haiku"]; known before any call is made. */
   models: string[];
+  /** Provider pinned when the job started, if the step uses Claude-backed calls. */
+  modelProvider?: ModelProvider;
   /** Labels of the Claude accounts used by the job's agent runs, running or finished. */
   accounts: string[];
 }
@@ -1678,6 +1680,9 @@ export type JevStatus = { enabled: boolean; unavailable: { reason: string; since
 export type AccountInput = { label?: string; enabled?: boolean; maxConcurrent?: number };
 
 export type AgentRunState = "running" | "done" | "failed";
+export type ModelProvider = "claude" | "codex";
+export type ModelProviderSettings = { defaultProvider: ModelProvider; workflows: Record<string, ModelProvider> };
+export type ModelProviderConfig = ModelProviderSettings & { availableWorkflows: string[] };
 export type AgentRun = {
   id: number;
   jobId: number | null;

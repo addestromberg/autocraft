@@ -16,6 +16,7 @@ const { DEFAULT_MAX_JOBS, Runner } = await import("../src/runner/runner.ts");
 const { STEPS } = await import("../src/runner/steps.ts");
 const { FAKE_TOKEN } = await import("./runner-steps.ts");
 const { inputHash } = await import("../src/runner/classify.ts");
+const { setProviderSettings } = await import("../src/agents/provider.ts");
 
 mkdirSync(SCRATCH, { recursive: true });
 const dir = mkdtempSync(join(SCRATCH, "runner-test-"));
@@ -42,6 +43,20 @@ async function until(cond: () => boolean, ms = 20_000): Promise<void> {
 const state = (id: number) => getJob(db, id).state;
 
 describe("runner", () => {
+  test("pins provider at claim and fails unsupported Codex jobs without switching to Claude", async () => {
+    setProviderSettings(db, { defaultProvider: "codex", workflows: { "test-provider": "claude" } });
+    const first = await enqueue(db, "test-provider", {}, "boss");
+    await runner.tick();
+    assert.equal(getJob(db, first.id).modelProvider, "claude");
+    setProviderSettings(db, { defaultProvider: "codex", workflows: {} });
+    await until(() => state(first.id) === "done");
+    assert.equal(getJob(db, first.id).summary, "claude");
+    const second = await enqueue(db, "test-provider", {}, "boss");
+    await until(() => state(second.id) === "failed");
+    assert.equal(getJob(db, second.id).modelProvider, "codex");
+    assert.match(getJob(db, second.id).error ?? "", /Codex is selected/);
+    setProviderSettings(db, { defaultProvider: "claude", workflows: {} });
+  });
   test("runs a queued job and records its summary, usage and a scrubbed log; a failing job is failed", async () => {
     const ok = await enqueue(db, "test-echo", { n: 7 }, "boss");
     const bad = await enqueue(db, "test-echo", { mode: "fail" }, "boss");

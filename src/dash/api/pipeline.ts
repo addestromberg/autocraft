@@ -19,6 +19,7 @@ import { filtered, hiddenTest, type HiddenRepos } from "../../hidden-sql.ts";
 import { isQuiet } from "../../security/quiet.ts";
 import { canSeeInternals } from "./staff.ts";
 import { SECURITY_STEP } from "../../security/rules.ts";
+import { isModelProvider, providerSettings, setProviderSettings } from "../../agents/provider.ts";
 
 // Stages of docs/pipeline.md. A stage with registered steps shows them; the
 // mirror also runs on its own timer.
@@ -188,6 +189,36 @@ export async function cancel(db: DatabaseSync, req: Req): Promise<Job> {
 }
 
 export const state = (db: DatabaseSync, req: Req) => pipelineState(db, req);
+
+async function providerWorkflows() {
+  return [...(await loadSteps()).values()]
+    .filter((step) => typeof step.models === "function" || step.models?.some((model) => model !== "jev"))
+    .map((step) => step.name);
+}
+
+export async function getProviderConfig(db: DatabaseSync) {
+  const availableWorkflows = await providerWorkflows();
+  return { ...providerSettings(db), availableWorkflows };
+}
+
+export async function putProviderConfig(db: DatabaseSync, req: Req) {
+  requireOperator(req);
+  const { workflow, provider } = body(req);
+  const availableWorkflows = await providerWorkflows();
+  if (typeof workflow !== "string" || (workflow && !availableWorkflows.includes(workflow))) {
+    throw new HttpError(400, "unknown model workflow");
+  }
+  if (!isModelProvider(provider) && !(workflow && provider === null)) {
+    throw new HttpError(400, "provider must be claude, codex, or null for an inherited workflow");
+  }
+  const settings = providerSettings(db);
+  if (!workflow && isModelProvider(provider)) settings.defaultProvider = provider;
+  else if (isModelProvider(provider)) settings.workflows[workflow] = provider;
+  else delete settings.workflows[workflow];
+  setProviderSettings(db, settings);
+  audit(db, req.user.login, "model-provider", workflow || "pipeline", { provider });
+  return { ...settings, availableWorkflows };
+}
 
 export async function putState(db: DatabaseSync, req: Req) {
   requireOperator(req);

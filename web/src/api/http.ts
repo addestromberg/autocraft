@@ -281,6 +281,9 @@ export function createHttpApi(): Api {
       setJudgementModel: (model) => put("/api/pipeline/judgement-model", { model }),
     },
     accounts: {
+      codex: () => get("/api/accounts/codex"),
+      codexLogin: () => post("/api/accounts/codex/login"),
+      codexDisconnect: () => post("/api/accounts/codex/disconnect"),
       list: () => get("/api/accounts"),
       pause: () => get("/api/accounts/pause"),
       setPause: (input) => put("/api/accounts/pause", input),

@@ -28,6 +28,22 @@ For a live run, verify that the selected sandbox backend can start inside the co
 
 The fork's **Codex PR check** runs `pnpm check` for same-repository PRs targeting `codex` when they are ready for review and cancels superseded runs. Keep Docker publishing disabled on the fork. Register `codex-dev` in a dedicated runner environment with Node and npm, separate from developer credentials and AutoCraft development state. Give it the `codex-isolated` label after confirming that the runner cannot read those credentials or state. Verify a PR completes the job before marking the check required for `codex`. Run the full test suite and live checks directly in Incus.
 
+#### Verify Codex device sign-in
+
+Build the dashboard with `pnpm -C web install --frozen-lockfile` and `pnpm -C web build`. Run the dashboard in Incus with dedicated development state. The account directory must be owned by the dashboard user with mode 0700 and separate from the interactive Codex home.
+
+```sh
+dev_state="$(mktemp -d "$HOME/.autocraft-dev.XXXXXX")"
+AUTOCRAFT_DB="$dev_state/mirror.db" node src/cli.ts access add local-operator --operator
+AUTOCRAFT_DB="$dev_state/mirror.db" \
+  AUTOCRAFT_CODEX_HOME="$dev_state/codex" \
+  AUTOCRAFT_DEV_AUTH=1 node src/cli.ts dash serve
+```
+
+From your workstation, use `ssh -L 8994:127.0.0.1:8994 <wireguard-ssh-host>` and open `http://127.0.0.1:8994/accounts`. Sign in to the development dashboard as `local-operator`. Choose **Connect Codex**, open the device sign-in page, and enter the one-time code. If the account requires it, enable device-code authorization in ChatGPT security settings first. Confirm **Connected**, restart the dashboard using the same `dev_state`, and check that it still shows **Connected**. Use **Disconnect** and confirm that the account is signed out. Keep the development state outside tracked source and accessible only to the dashboard user.
+
+`AUTOCRAFT_CODEX_BIN` overrides the `codex` executable. AutoCraft starts the CLI with a dedicated home and file-based authentication. The initiating operator sees the temporary device challenge. The CLI's saved credentials stay in `AUTOCRAFT_CODEX_HOME`, and account audit events record the action without the challenge or credentials.
+
 ### Sync
 
 `autocraft sync` (every minute) runs one org-wide GitHub search for items updated since the newest `updatedAt` stored (`org_high_water`) minus 10 minutes, up to the run's start. The search returns at most 1,000 results, so a window with more matches is cut into `updated:A..B` slices, halving until each fits. A one-second slice with more than 1,000 matches is read by listing every tracked repo down to that second (with a logged warning); until the run finishes, neither `org_high_water` nor a repo's `high_water` moves. GitHub's search index can lag, so once an hour (`search_catchup_at`) the same search also re-reads the 6 hours before `org_high_water`, sliced the same way. `org_high_water` moves to the newest `updatedAt` seen, not to the start time. An item whose stored row equals what GitHub returned is not written again. Items of untracked repos are dropped before anything else is done with them. Per-repo passes run only for the first sync, for a repo that was just tracked (tracking clears its `high_water` and `synced_at`) and for `--per-repo`, `--all` and `--repo`.

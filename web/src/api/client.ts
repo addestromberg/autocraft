@@ -39,6 +39,7 @@ import type {
   AgentRunFilter,
   AgentRunPage,
   ClaudeAccount,
+  CodexAccount,
   UsagePause,
   JevStatus,
   Rates,
@@ -370,6 +371,9 @@ export interface Api {
 
   /** Enabled accounts for everyone; operators also see disabled ones and edit label, enabled and max concurrent. Never an email or path. */
   accounts: {
+    codex(): Promise<CodexAccount>;
+    codexLogin(): Promise<CodexAccount>;
+    codexDisconnect(): Promise<CodexAccount>;
     list(): Promise<ClaudeAccount[]>;
     pause(): Promise<UsagePause>;
     jev(): Promise<JevStatus>;

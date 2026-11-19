@@ -12,6 +12,8 @@ import type { Req } from "../types.ts";
 import { hiddenRepos } from "./visible.ts";
 import { canSeeInternals } from "./staff.ts";
 import { SECURITY_STEP } from "../../security/rules.ts";
+import * as codex from "../../agents/codex/account.ts";
+import { audit } from "../audit.ts";
 
 const wrap = async <T>(f: () => T | Promise<T>): Promise<T> => {
   try {
@@ -55,6 +57,18 @@ export const tokenCancel = (db: DatabaseSync, req: Req) => wrap(() => stopToken(
 export const tokenRemove = (db: DatabaseSync, req: Req) => wrap(() => removeToken(db, req.params.id, req.user.login));
 export const accountSignOut = (db: DatabaseSync, req: Req) => wrap(() => signOut(db, req.params.id, req.user.login));
 export const accountRefresh = (db: DatabaseSync, req: Req) => wrap(() => refreshNow(db, req.params.id, req.user.login));
+
+export const codexAccount = (_db: DatabaseSync, req: Req) => wrap(() => codex.account(req.user.login));
+export const codexLogin = (db: DatabaseSync, req: Req) => wrap(async () => {
+  const account = await codex.startLogin(req.user.login);
+  audit(db, req.user.login, "account-login-start", "codex");
+  return account;
+});
+export const codexDisconnect = (db: DatabaseSync, req: Req) => wrap(async () => {
+  const account = await codex.disconnect(req.user.login);
+  audit(db, req.user.login, "account-sign-out", "codex");
+  return account;
+});
 
 function intParam(req: Req, name: string): number | undefined {
   const v = req.query.get(name);

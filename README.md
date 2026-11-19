@@ -118,6 +118,7 @@ Claude calls run under accounts that an operator enables. Each account is a Clau
 | Variable | Meaning |
 |---|---|
 | `AUTOCRAFT_ACCOUNTS_ROOT` | Directory for accounts added on the dashboard's Accounts page, which runs `claude auth login` for you |
+| `AUTOCRAFT_CODEX_HOME` | Private service-owned directory for the optional Codex account on the Accounts page |
 | `AUTOCRAFT_USAGE_DIR` | One `<id>.json` per account with its rate-limit readings |
 | `AUTOCRAFT_CLAUDE_BIN` | The `claude` command, default from `PATH` |
 

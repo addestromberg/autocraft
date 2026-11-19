@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { holdCheckouts } from "../../sandbox/checkout.ts";
+import { codexFailure } from "./errors.ts";
 import { account, codexCommand } from "./account.ts";
 import { codexReadTools, type CodexReadScope } from "./read-tools.ts";
 
@@ -122,7 +123,7 @@ export async function openCodexReadSession({ model, scope, signal, retained }: R
         } else if (active && message.id === active.requestId && typeof message.result?.turn?.id === "string") {
           active.turnId = message.result.turn.id;
         } else if (message.id !== undefined) {
-          return stop("The Codex runtime could not start scoped checkout access");
+          return stop(codexFailure(message.error) ?? "The Codex runtime could not start scoped checkout access");
         } else if (active && threadId && p?.threadId === threadId) {
           if (active.turnId && p.turnId && active.turnId !== p.turnId) continue;
           if ((message.method === "item/started" || message.method === "item/completed") &&
@@ -140,7 +141,7 @@ export async function openCodexReadSession({ model, scope, signal, retained }: R
             clearTimeout(timer);
             active = undefined;
             if (p.turn?.status !== "completed" || typeof text !== "string" || !text.trim() || text.length > MAX_REPLY) {
-              reject(new Error("Codex checkout execution did not return a valid reply"));
+              reject(new Error(codexFailure(p.turn?.error) ?? "Codex checkout execution did not return a valid reply"));
             } else {
               resolve({ text });
             }

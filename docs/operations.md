@@ -74,6 +74,8 @@ Operators can configure the instance default and workflow overrides in **Pipelin
 
 The same control stores a separate Codex default model and workflow overrides. Leave the default blank to use the connected account's default. **Load available models** requests suggestions from the connected Codex runtime. Enter a model ID directly when the list is unavailable or omits a model your subscription supports. A failed run with an explicit model identifies the configured model and workflow in its error.
 
+Codex model calls share one slot per AutoCraft database. Jobs can be cancelled while waiting for the slot, and interactive calls use their configured wait limits.
+
 Scheduled classification, referee, area assignment, priority, and duplicate checks support Codex. Jobs pin the configured Codex model at start and preserve Jev's first pass. The existing classifier tables retain their workflow roles. Job and agent history show the provider and model used for the call.
 
 #### Verify scheduled Codex text workflows

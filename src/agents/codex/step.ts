@@ -9,6 +9,7 @@ import { touchStore } from "../../prepush/resume.ts";
 import { CLAUDE_PROMPTS, renderClaude, type ClaudeInput, type ClaudePromptId } from "../../prompts/index.ts";
 import { currentCodexModel, modelCallStopping, stepOf, StoppedError } from "../call.ts";
 import { finishRun, insertRun } from "../runs.ts";
+import { takeCodexSlot } from "./queue.ts";
 import { runCodex } from "./adapter.ts";
 import { recordCodexCheckoutTurn } from "./checkout-turn.ts";
 import { openCodexReadSession } from "./read-run.ts";
@@ -39,7 +40,9 @@ export async function runCodexStep<K extends ClaudePromptId>(id: K, input: Claud
   const items = refsOf(input);
   const controller = new AbortController();
   const timer = setInterval(() => { if (modelCallStopping()) controller.abort(); }, 500);
+  let release: (() => void) | undefined;
   try {
+    release = await takeCodexSlot(db, id, controller, opts);
     if (opts.checkout) {
       return await checkoutReply(db, id, prompt, items, opts.checkout, opts, model, controller.signal);
     }
@@ -63,6 +66,7 @@ export async function runCodexStep<K extends ClaudePromptId>(id: K, input: Claud
     throw new Error(`${context.step}: ${message}`);
   } finally {
     clearInterval(timer);
+    release?.();
   }
 }
 

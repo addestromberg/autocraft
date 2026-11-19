@@ -15,7 +15,7 @@ const ERROR_MAX = 400;
 
 export type RunStart = {
   jobId: number | null; step: string; stage: number;
-  promptId: string; promptVersion: string; provider: "claude" | "jev"; model: string; accountId: string | null;
+  promptId: string; promptVersion: string; provider: AgentRun["provider"]; model: string; accountId: string | null;
   items: ItemRef[]; prompt: string;
 };
 
@@ -100,7 +100,7 @@ function refs(s: string): ItemRef[] {
 function toRun(r: RunRow, shown: (repo: string, number: number) => ItemShown): AgentRun {
   return {
     id: r.id, jobId: r.job_id, step: r.step, stage: r.stage, promptId: r.prompt_id, promptVersion: r.prompt_version,
-    provider: r.provider === "jev" ? "jev" : "claude", model: r.model, accountId: r.account_id, accountLabel: r.account_id ? (r.account_label ?? r.account_id) : null,
+    provider: r.provider === "jev" || r.provider === "codex" ? r.provider : "claude", model: r.model, accountId: r.account_id, accountLabel: r.account_id ? (r.account_label ?? r.account_id) : null,
     items: refs(r.items).map((x) => ({ ...x, ...shown(x.repo, x.number) })), itemCount: r.item_count, state: r.state, startedAt: r.started_at, endedAt: r.ended_at,
     inputTokens: r.input_tokens, outputTokens: r.output_tokens, cacheReadTokens: r.cache_read_tokens, cacheWriteTokens: r.cache_write_tokens, costUsd: r.cost_usd, summary: r.summary,
     ...(r.state === "running" && r.progress && { progress: r.progress }),

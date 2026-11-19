@@ -8,6 +8,7 @@ import { markSpotCheck, pickDisagreements, runReferee } from "./referee.ts";
 import { latestRun, runExists, setCurrentRun } from "./settled.ts";
 import { loadItems, loadRefs, runHaiku, runJev } from "./run.ts";
 import { rng, shuffle } from "./sample.ts";
+import { classifyWithCodex } from "./codex.ts";
 
 function flags(args: string[], names: string[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -55,12 +56,23 @@ async function classify(args: string[]): Promise<void> {
   if (args[0] === "current") return current(args.slice(1));
   const f = flags(args, ["classifier", "run-id", "items"]);
   const which = need(f, "classifier"), runId = need(f, "run-id");
-  if (which !== "jev" && which !== "haiku") {
-    console.error("--classifier is jev or haiku");
+  if (which !== "jev" && which !== "haiku" && which !== "codex") {
+    console.error("--classifier is jev, haiku, or codex");
     process.exit(1);
   }
   const db = connect();
   const items = loadItems(db, loadRefs(need(f, "items")));
+  if (which === "codex") {
+    try {
+      if (items.length !== 1) throw new Error("Codex classification requires exactly one issue");
+      const id = await classifyWithCodex(db, runId, items[0]!);
+      console.log(`codex: 1 issue classified (agent run #${id})`);
+    } catch (error) {
+      console.error((error as Error).message);
+      process.exitCode = 1;
+    }
+    return;
+  }
   const t0 = Date.now();
   if (which === "jev") await runJev(db, runId, items);
   else await runHaiku(db, runId, items);
@@ -156,7 +168,7 @@ function compare(args: string[]): void {
 }
 
 export const commands = {
-  classify: { summary: "classify --classifier jev|haiku --run-id <id> --items <file> | classify current [<run>]", run: classify },
+  classify: { summary: "classify --classifier jev|haiku|codex --run-id <id> --items <file> | classify current [<run>]", run: classify },
   "classify-sample": { summary: "classify-sample --reference <csv> --pr-repo <r> --issue-repos a,b --out-dir <dir> [--seed --prs --issues-each]", run: sample },
   "classify-referee": { summary: "classify-referee --run-id <id> [--reference <csv> --count 30 --spot-check 10 --seed 1]", run: referee },
   "classify-compare": { summary: "classify-compare --run-id <id> [--reference <csv> --out <file>]", run: compare },

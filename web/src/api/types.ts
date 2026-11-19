@@ -1685,7 +1685,7 @@ export type AgentRun = {
   stage: number;             // stage number from docs/pipeline.md
   promptId: string;          // prompt registry id
   promptVersion: string;     // registry version or content hash
-  provider: "claude" | "jev";
+  provider: "claude" | "jev" | "codex";
   model: string;             // e.g. "sonnet", "haiku", "jev"
   accountId: string | null;  // null for Jev
   accountLabel: string | null;

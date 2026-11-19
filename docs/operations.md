@@ -149,6 +149,8 @@ The `fixissue`, `fixissue-collect`, and `fixup` provider overrides support ordin
 
 The `cifix` and `main-fix` provider overrides let Codex propose ordinary repairs from failed checks and classify default-branch failures. AutoCraft validates each patch and keeps the existing worker checks, operator approvals, and current-head checks before publication.
 
+Select Codex for `verify` and `verify-collect` to use it for verification planning, screenshot plans, and failure summaries. The existing workers execute the validated plans. Codex compares changed screenshots only for repos whose operator sets `"codex_compare": true` in the **Build environments → Screenshots** setup. This sends validated before-and-after images to the connected Codex service. The default is off. Set the option to false or remove it to withdraw permission for later comparisons.
+
 #### Verify repository-aware Codex workflows in Incus
 
 Connect Codex through the development dashboard and point `AUTOCRAFT_CODEX_HOME` at its dedicated home. Use a development environment with no Claude accounts. The live checks create temporary synthetic repository and database fixtures and use the active Codex subscription.

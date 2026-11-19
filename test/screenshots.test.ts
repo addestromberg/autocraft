@@ -12,6 +12,8 @@ import { connect } from "../src/db.ts";
 import { parseCompareReply, parseScreenshotReply, type CompareParsed } from "../src/verify/plan.ts";
 import { runCollect, collectDue, type CollectDeps } from "../src/verify/results.ts";
 import { putConfig, type ScreenshotConfigBody } from "../src/verify/screenshot-config.ts";
+import { withWorkflowProvider } from "../src/agents/call.ts";
+import { setProviderSettings } from "../src/agents/provider.ts";
 import { runVerify, type VerifyDeps } from "../src/verify/index.ts";
 import { SCRATCH } from "./scratch.ts";
 
@@ -192,4 +194,20 @@ describe("screenshots review fixes", () => {
     assert.equal(count(db, "SELECT 1 FROM build_tasks WHERE step = 'screenshot' AND state = 'cancelled'"), 2);
     assert.deepEqual({ ...db.prepare("SELECT state, reason FROM screenshot_runs").get() }, { state: "skipped", reason: "screenshots switched off" });
   });
+});
+
+test("Codex screenshot collection stops at the repository opt-in gate", async () => {
+  const db = fresh();
+  try {
+    switchOn(db);
+    await rendered(db, { head: "different", base: "original" });
+    setProviderSettings(db, { defaultProvider: "claude", workflows: { "verify-collect": "codex" } });
+    await withWorkflowProvider(db, "verify-collect", () => runCollect(db, {}, () => {}, { model: "haiku" }));
+    const row = db.prepare("SELECT state, reason FROM screenshot_runs").get();
+    assert.equal(row?.state, "error");
+    assert.match(String(row?.reason), /uploads are disabled for this repository/);
+    assert.equal(count(db, "SELECT 1 FROM agent_runs WHERE prompt_id = 'verify.compare'"), 0);
+  } finally {
+    db.close();
+  }
 });

@@ -151,6 +151,18 @@ The `cifix` and `main-fix` provider overrides let Codex propose ordinary repairs
 
 Select Codex for `verify` and `verify-collect` to use it for verification planning, screenshot plans, and failure summaries. The existing workers execute the validated plans. Codex compares changed screenshots only for repos whose operator sets `"codex_compare": true` in the **Build environments → Screenshots** setup. This sends validated before-and-after images to the connected Codex service. The default is off. Set the option to false or remove it to withdraw permission for later comparisons.
 
+#### Run the Codex repair fixture in Incus
+
+With the development Codex account connected, set `AUTOCRAFT_CODEX_HOME` to its dedicated home and run the repair fixture as the rootless Podman worker user.
+
+```sh
+env -u AUTOCRAFT_ACCOUNTS -u AUTOCRAFT_ACCOUNTS_ROOT node scripts/verify-codex-repair.mjs
+```
+
+The script fetches a pinned public Rust fixture, asks Codex for a patch, and runs AutoCraft’s baseline and patched worker plans through the coordinator task queue. It checks that the baseline fails the status-label assertion after a successful build and that the patched build, test, regression, format, and Clippy steps pass. The script verifies the stored task details and logs used by the dashboard. The fixture script uses a temporary database and does not publish changes to GitHub.
+
+The script uses the worker’s default namespace configuration unless `AUTOCRAFT_FIXTURE_USERNS` is set. The Incus acceptance run used `AUTOCRAFT_FIXTURE_USERNS=host` with rootless Podman for this synthetic fixture after the default image ownership mapping timed out.
+
 #### Verify repository-aware Codex workflows in Incus
 
 Connect Codex through the development dashboard and point `AUTOCRAFT_CODEX_HOME` at its dedicated home. Use a development environment with no Claude accounts. The live checks create temporary synthetic repository and database fixtures and use the active Codex subscription.

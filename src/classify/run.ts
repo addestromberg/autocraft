@@ -216,7 +216,7 @@ export function setRunner(r: Runner): () => void {
 
 const versions = new Map<string, string>();
 /** A short hash of the registered prompt text, so runs show which wording they used. */
-function promptVersion(id: ClaudePromptId | JevPromptId): string {
+export function promptVersion(id: ClaudePromptId | JevPromptId): string {
   let v = versions.get(id);
   if (!v) {
     const p = id in CLAUDE_PROMPTS ? claudePromptOf(id as ClaudePromptId).template : JSON.stringify(jevPromptOf(id as JevPromptId).request);

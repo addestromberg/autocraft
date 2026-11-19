@@ -4,6 +4,7 @@
 // recorded prompt and reply are deleted when the call ends, and an edit asks again. A deleted message takes its row, and
 // so its flag, with it (store.ts). Display only: nothing in the pipeline reads the flag.
 import type { DatabaseSync } from "node:sqlite";
+import { withWorkflowProvider } from "../agents/call.ts";
 import { jevAvailable } from "../agents/jev.ts";
 import { runModelStep, type ClaudeStep, type JevStep } from "../agents/step.ts";
 import { JEV_PROMPTS } from "../prompts/index.ts";
@@ -50,7 +51,7 @@ export const modelJudge: Judge = {
     return r.ok ? r.value : null;
   },
   haiku: async (db, a) => {
-    const r = await runModelStep(db, HAIKU_STEP, a, { maxWaitMs: MODEL_WAIT_MS });
+    const r = await withWorkflowProvider(db, "discord-signal", () => runModelStep(db, HAIKU_STEP, a, { maxWaitMs: MODEL_WAIT_MS }));
     return r.ok ? r.value : null;
   },
 };

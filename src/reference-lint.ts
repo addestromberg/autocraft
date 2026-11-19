@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { isHalt } from "./agents/call.ts";
+import { isHalt, withWorkflowProvider } from "./agents/call.ts";
 import { jevAvailable } from "./agents/jev.ts";
 import { runModelStep } from "./agents/step.ts";
 import { REFERENCE_HAIKU, REFERENCE_JEV } from "./agents/steps.ts";
@@ -163,7 +163,7 @@ export function defaultSemanticDeps(db: DatabaseSync, ref: string): SemanticDeps
       return r.ok ? r.value : null;
     },
     async haiku(text) {
-      const r = await runModelStep(db, REFERENCE_HAIKU, [{ ref, text }], { maxWaitMs: HAIKU_WAIT_MS });
+      const r = await withWorkflowProvider(db, "reference-lint", () => runModelStep(db, REFERENCE_HAIKU, [{ ref, text }], { maxWaitMs: HAIKU_WAIT_MS }));
       return r.ok ? r.value : null;
     },
     jevUsable: () => jevAvailable(db),

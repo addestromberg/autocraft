@@ -153,6 +153,16 @@ The `cifix` and `main-fix` provider overrides let Codex propose ordinary repairs
 
 Select Codex for `verify` and `verify-collect` to use it for verification planning, screenshot plans, and failure summaries. The existing workers execute the validated plans. Codex compares changed screenshots only for repos whose operator sets `"codex_compare": true` in the **Build environments → Screenshots** setup. This sends validated before-and-after images to the connected Codex service. The default is off. Set the option to false or remove it to withdraw permission for later comparisons.
 
+#### Rehearse the provider switch on a development database copy
+
+Set `AUTOCRAFT_CODEX_HOME` to the connected development account and pass the path of the development database. The script opens the source read-only and upgrades a temporary SQLite backup.
+
+```sh
+node scripts/verify-codex-upgrade.mjs /path/to/development.db
+```
+
+The check compares the saved provider and model settings, runs live Codex classification as the default, then runs the same workflow with a simulated Claude response. It verifies the provider and result in run history and removes the temporary database.
+
 #### Run the Codex repair fixture in Incus
 
 With the development Codex account connected, set `AUTOCRAFT_CODEX_HOME` to its dedicated home and run the repair fixture as the rootless Podman worker user.

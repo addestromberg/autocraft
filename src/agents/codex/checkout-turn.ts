@@ -5,6 +5,7 @@ import type { ClaudePromptId } from "../../prompts/index.ts";
 import { stepOf } from "../call.ts";
 import { finishRun, insertRun, setRunProgress } from "../runs.ts";
 import { scrub } from "../../runner/scrub.ts";
+import { jsonObject } from "../../security/rules.ts";
 import type { openCodexReadSession } from "./read-run.ts";
 
 type Session = Awaited<ReturnType<typeof openCodexReadSession>>;
@@ -25,7 +26,10 @@ export async function recordCodexCheckoutTurn(db: DatabaseSync, session: Session
         onProgress?.(line);
       },
     });
-    const text = scrub(reply.text);
+    const output = promptId === "security.verify" ? jsonObject(reply.text) : null;
+    const text = scrub(promptId === "security.verify" ? output ? JSON.stringify({
+      verdict: output.verdict, score: output.score, result: output.result, notes: output.notes,
+    }) : "" : reply.text);
     finishRun(db, run, { state: "done", output: text });
     return { text };
   } catch (error) {

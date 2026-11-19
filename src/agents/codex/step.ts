@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
 import { docsOf, promptVersion, refsOf, type AskOptions, type LintedReply } from "../../classify/run.ts";
-import { renderClaude, type ClaudeInput, type ClaudePromptId } from "../../prompts/index.ts";
+import { CLAUDE_PROMPTS, renderClaude, type ClaudeInput, type ClaudePromptId } from "../../prompts/index.ts";
 import { currentCodexModel, modelCallStopping, stepOf, StoppedError } from "../call.ts";
 import { finishRun, insertRun } from "../runs.ts";
 import { runCodex } from "./adapter.ts";
@@ -10,17 +10,22 @@ import { openCodexReadSession } from "./read-run.ts";
 import { snapshotFile } from "../../itemtools/snapshot.ts";
 import { fixTurnMessage, mergeFixFields, needsFixTurn } from "../../replylint.ts";
 import { scrub } from "../../runner/scrub.ts";
+import { VERIFY_OPTIONAL_TEST } from "../../security/prompts.ts";
 
 const supported = new Set<ClaudePromptId>(["classify.haiku", "priority.haiku", "dupes.haiku", "areas.haiku", "referee.sonnet", "decide.prepare", "lint.reference.haiku"]);
+const checkoutPrompts = new Set<ClaudePromptId>(["decide.prepare", "review.opus", "premerge.opus", "postmerge.opus", "security.model", "security.area", "security.verify"]);
 const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null };
 
 export async function runCodexStep<K extends ClaudePromptId>(id: K, input: ClaudeInput[K], db: DatabaseSync, opts: AskOptions): Promise<LintedReply> {
-  if (!supported.has(id) || opts.check || opts.session || (id !== "decide.prepare" && (opts.checkout || opts.lint))) {
+  const scoped = checkoutPrompts.has(id);
+  if ((!supported.has(id) && !scoped) || opts.check || opts.session || (!scoped && (opts.checkout || opts.lint))) {
     throw new Error(`Codex is selected but does not yet support ${id}`);
   }
   if (modelCallStopping()) throw new StoppedError("the job is stopping");
+  if (id.startsWith("security.") && !opts.checkout) throw new Error(`Codex requires a scoped checkout for ${id}`);
   const model = currentCodexModel();
-  const prompt = renderClaude(id, input);
+  const rendered = renderClaude(id, input);
+  const prompt = id === "security.verify" ? rendered.replace(VERIFY_OPTIONAL_TEST, "Base the verification on static evidence and omit proposed_test.") : rendered;
   const context = stepOf(id);
   const items = refsOf(input);
   const controller = new AbortController();
@@ -36,7 +41,7 @@ export async function runCodexStep<K extends ClaudePromptId>(id: K, input: Claud
       const text = scrub(reply.text);
       const problems = await opts.lint?.(text, "fix");
       finishRun(db, run, { state: "done", tokens: reply.usage, output: text,
-        summary: id === "decide.prepare" ? "Prepared without a checkout" : undefined });
+        summary: scoped ? "Ran without a checkout" : undefined });
       return { text, usage: reply.usage ?? zeroUsage, ...(problems && { problems }) };
     } catch (error) {
       finishRun(db, run, { state: "failed", error: error instanceof Error ? error.message : "Codex execution failed" });
@@ -54,9 +59,11 @@ export async function runCodexStep<K extends ClaudePromptId>(id: K, input: Claud
 async function checkoutReply(db: DatabaseSync, id: ClaudePromptId, prompt: string, items: ReturnType<typeof refsOf>,
   checkout: string, opts: AskOptions, model: string | undefined, signal: AbortSignal): Promise<LintedReply> {
   const snapshot = snapshotFile();
+  const access = CLAUDE_PROMPTS[id].sandbox;
   const session = await openCodexReadSession({ model, signal, scope: {
-    checkout, reference: opts.reference, repoDocs: await docsOf(db, checkout),
-    ...(opts.itemTools !== null && existsSync(snapshot) && { items: { snapshot, refs: items } }),
+    checkout, reference: access?.reference ? opts.reference : undefined,
+    repoDocs: access?.docs ? await docsOf(db, checkout) : undefined,
+    ...(access?.workspace && opts.itemTools !== null && existsSync(snapshot) && { items: { snapshot, refs: items } }),
   } });
   try {
     const turn = { promptId: id, items, onProgress: opts.onProgress };

@@ -210,6 +210,7 @@ Codex model settings are separate from Claude's and can use the connected accoun
 Repository-aware Codex tools use the scoped checkout and item reader described in the [Incus operations guide](docs/operations.md#scoped-codex-checkout-access).
 Scoped Codex sessions can stream progress and reuse a pinned thread for follow-up turns.
 The **Ask decisions** workflow can use Codex to prepare recommendations for operator review.
+Codex can also review PR heads and merge commits and perform read-only defensive review.
 
 | Path | Contents |
 |---|---|

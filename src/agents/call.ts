@@ -16,6 +16,7 @@ export const setCallContext = (c: CallContext | null): void => void (context = c
 export const currentJobId = (): number | null => context?.jobId ?? null;
 export const currentModelProvider = (): ModelProvider => context?.modelProvider ?? "claude";
 export const currentCodexModel = (): string | undefined => context?.codexModel;
+export const recordedModel = (claudeModel: string): string => currentModelProvider() === "codex" ? currentCodexModel() ?? "codex" : claudeModel;
 export const textFallbackLabel = (): string => currentModelProvider() === "codex" ? "Codex" : "Haiku";
 export const modelCallStopping = (): boolean => context?.cancelled() === true || context?.stopping?.() === true;
 /** The job and step this process runs, or null outside a job. */

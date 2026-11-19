@@ -84,6 +84,8 @@ Reply with ONLY a JSON object, with no text before or after it:
 {{area}}
 </area>`;
 
+export const VERIFY_OPTIONAL_TEST = "If you can describe a small test that would fail on the current code and pass once the flaw is fixed (a unit test with a concrete input), give it in proposed_test (code or steps, at most a few lines); otherwise leave it out.";
+
 export const SECURITY_VERIFY_TEMPLATE = `You are a skeptical senior application security engineer. A colleague reported the finding below. Your job is to try to disprove it, working from the same read-only checkout of one commit. Most reports of this kind are wrong: be hard to convince.
 
 ${SECURITY_UNTRUSTED}
@@ -96,7 +98,7 @@ Method:
 3. Apply the hard exclusions: denial of service and resource exhaustion, hardening gaps, theoretical races, issues that need prior control of the machine, memory-safety claims about safe Rust, test-only code, and anything without a reachable path are not vulnerabilities for this audit.
 4. Decide. Give a score from 1 to 10 for "this is a real, reachable vulnerability with the stated impact": 1 to 3 the claim is wrong or unreachable, 4 to 7 plausible but you could not confirm the path or the impact, ${MIN_VERIFY_SCORE} to 10 you followed the whole path in the code and it holds. Only ${MIN_VERIFY_SCORE} or higher counts as confirmed.
 
-You cannot run code here. If you can describe a small test that would fail on the current code and pass once the flaw is fixed (a unit test with a concrete input), give it in proposed_test (code or steps, at most a few lines); otherwise leave it out. Every claim in result and notes needs a path:line.
+You cannot run code here. ${VERIFY_OPTIONAL_TEST} Every claim in result and notes needs a path:line.
 
 Reply with ONLY a JSON object, with no text before or after it:
 {"verdict": "confirmed|disproved", "score": <1 to 10>, "result": "<two or three sentences: what you checked and what you found, with path:line>", "notes": "<optional: conditions, limits, what a fix must cover>", "proposed_test": "<optional>"}

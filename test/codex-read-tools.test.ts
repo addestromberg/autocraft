@@ -9,6 +9,23 @@ import { connect } from "../src/db.ts";
 import { writeSnapshot } from "../src/itemtools/snapshot.ts";
 import { SCRATCH } from "./scratch.ts";
 
+test("Codex defensive verification stores only its static review fields", async () => {
+  const db = connect(join(SCRATCH, "verification.db"));
+  try {
+    const session = {
+      model: "fixture-model",
+      async turn() {
+        return { text: JSON.stringify({ verdict: "disproved", score: 1, result: "The guard rejects invalid values.", proposed_test: "SYNTHETIC-PROPOSAL" }) };
+      },
+      async close() {},
+    };
+    const result = await recordCodexCheckoutTurn(db, session, { promptId: "security.verify", prompt: "Review static evidence", items: [] });
+    assert.deepEqual(JSON.parse(result.text), { verdict: "disproved", score: 1, result: "The guard rejects invalid values." });
+  } finally {
+    db.close();
+  }
+});
+
 test("Codex checkout tools read pinned files and scoped item data only", () => {
   const checkout = join(SCRATCH, "checkout");
   mkdirSync(checkout);

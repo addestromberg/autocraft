@@ -2,7 +2,7 @@
 // lists defects and minor findings. One review per merged PR. Reads GitHub (the merged diff); writes only to the local
 // database. Filing the defects is src/postmerge/file.ts.
 import type { DatabaseSync } from "node:sqlite";
-import { queueRoom } from "../agents/call.ts";
+import { currentModelProvider, queueRoom, recordedModel } from "../agents/call.ts";
 import { pool } from "../classify/run.ts";
 import { runModelStep } from "../agents/step.ts";
 import { POSTMERGE_OPUS } from "../agents/steps.ts";
@@ -29,6 +29,7 @@ export type PostmergeParams = {
   /** Review these PRs of the repo whether or not they have a review (the `--again` command). */
   only?: number[];
   onHandled?: (n: number) => void;
+  onProgress?: (line: string) => void;
 };
 export type PostmergeDeps = {
   fetchMerged: MergedFetcher; model: string; maxChars: number;
@@ -140,17 +141,18 @@ export async function runPostmerge(db: DatabaseSync, params: PostmergeParams, lo
     const semantic = dir ? deps.semantic ?? defaultSemanticDeps(db, input.ref) : undefined;
     const r = await runModelStep(db, POSTMERGE_OPUS, input, {
       model: deps.model, checkout, reference: checkout ? dir : undefined, ctx: { dir, semantic },
+      onProgress: currentModelProvider() === "codex" ? params.onProgress : undefined,
       usage: { run: runId, agent: `postmerge-${refOf(c).replace("#", "-")}`, stage: "postmerge", items: (ok) => (ok ? 1 : 0) },
       onReply: (reply) => { if (reply.fixTurn) log(`  ${refOf(c)}: reply lint: ${reply.problems?.length ? `${reply.problems.length} problems left after the fix turn` : "fixed by one fix turn"}`); },
     });
     const got: Finding[] | null = r.ok ? r.value : null;
     if (got) {
-      saveReview(db, c, { sha: input.merge_sha, runId, model: deps.model, findings: got, error: null });
+      saveReview(db, c, { sha: input.merge_sha, runId, model: recordedModel(deps.model), findings: got, error: null });
       jobItem(db, repo, c.number, `post-merge review: ${got.length} findings`, log);
       s.reviewed++; s.findings += got.length; s.defects += got.filter((f) => f.severity === "defect").length;
     } else {
       jobItem(db, repo, c.number, "no valid post-merge review", log);
-      saveReview(db, c, { sha: input.merge_sha, runId, model: deps.model, findings: null, error: "retry: no valid reply from the model" });
+      saveReview(db, c, { sha: input.merge_sha, runId, model: recordedModel(deps.model), findings: null, error: "retry: no valid reply from the model" });
       s.failed.push(refOf(c));
     }
     params.onHandled?.(++handled);

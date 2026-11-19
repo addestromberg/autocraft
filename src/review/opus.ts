@@ -3,7 +3,7 @@
 // the delta since the head it reviewed before. Reads GitHub (diffs); never writes to it.
 import type { DatabaseSync } from "node:sqlite";
 import { CLAUDE_PROMPTS } from "../prompts/index.ts";
-import { currentJobId, queueRoom } from "../agents/call.ts";
+import { currentJobId, currentModelProvider, queueRoom, recordedModel } from "../agents/call.ts";
 import { pool } from "../classify/run.ts";
 import { runModelStep } from "../agents/step.ts";
 import { REVIEW_OPUS } from "../agents/steps.ts";
@@ -39,6 +39,7 @@ export type OpusParams = {
   repo: string; limit?: number; dryRun?: boolean;
   /** Called with the running count of PRs handled. */
   onHandled?: (n: number) => void;
+  onProgress?: (line: string) => void;
 };
 export type OpusDeps = {
   /** Reads the live head and state of the candidates just before the model calls; absent: the mirror's view stands. */
@@ -300,6 +301,7 @@ export async function runOpusReview(db: DatabaseSync, params: OpusParams, log: (
     const semantic = dir ? deps.semantic ?? defaultSemanticDeps(db, input.ref) : undefined;
     const r = await runModelStep(db, REVIEW_OPUS, input, {
       model: deps.model, checkout, reference: checkout ? dir : undefined, ctx: { dir, semantic },
+      onProgress: currentModelProvider() === "codex" ? params.onProgress : undefined,
       usage: { run: runId, agent: `opus-${refOf(c).replace("#", "-")}`, stage: "review", items: (ok) => (ok ? 1 : 0) },
       onReply: (reply) => {
         if (reply.fixTurn) log(`  ${refOf(c)}: reply lint: ${reply.problems?.length ? `${reply.problems.length} problems left after the fix turn` : "fixed by one fix turn"}`);
@@ -318,7 +320,7 @@ export async function runOpusReview(db: DatabaseSync, params: OpusParams, log: (
       }
       // A maintainer's word the model was not shown leaves the take to a person.
       if (p.maintDropped && got.sure && (got.verdict === "take" || got.verdict === "take-fix")) got = { ...got, sure: false, risks: [...got.risks, "a maintainer's comment was left out of the review for length"] };
-      saveOpus(db, runId, c, { mode, base, baseRef, model: deps.model, review: got, snap, unapplied: outcomes });
+      saveOpus(db, runId, c, { mode, base, baseRef, model: recordedModel(deps.model), review: got, snap, unapplied: outcomes });
       tally(c, got);
     } else {
       recordReviewFailure(db, c.repo, c.number, c.head_oid);

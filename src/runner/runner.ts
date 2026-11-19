@@ -26,6 +26,7 @@ import { OffThread } from "./offthread.ts";
 import { loadSteps, type Params } from "./steps.ts";
 import { jobBlock } from "./concurrency.ts";
 import { queueRoom } from "../agents/call.ts";
+import { selectedCodexModel } from "../agents/codex/models.ts";
 import { stepDeadlineMin, stepNoProgressMin } from "./deadlines.ts";
 import { envVar } from "../env.ts";
 
@@ -431,8 +432,9 @@ export class Runner {
       if (row) {
         try { provider = jobProvider(this.db, step, JSON.parse(row.params) as Params); } catch { /* validated by the child */ }
       }
+      const model = provider === "codex" ? selectedCodexModel(this.db, stepName) ?? null : null;
       claimed = !row || this.blocked(steps, id) ? 0
-        : this.db.prepare("UPDATE jobs SET state = 'running', started_at = ?, log_path = ?, model_provider = ? WHERE id = ? AND state = 'queued'").run(now(), logPath, provider, id).changes;
+        : this.db.prepare("UPDATE jobs SET state = 'running', started_at = ?, log_path = ?, model_provider = ?, codex_model = ? WHERE id = ? AND state = 'queued'").run(now(), logPath, provider, model, id).changes;
       this.db.exec("COMMIT");
     } catch (e) {
       this.db.exec("ROLLBACK");

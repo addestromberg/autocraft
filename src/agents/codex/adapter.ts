@@ -6,22 +6,30 @@ import type { TextAgentAdapter } from "../types.ts";
 import { account, codexCommand } from "./account.ts";
 
 type CodexRequest = { prompt: string; model?: string; signal?: AbortSignal };
-type CodexReply = { text: string };
+type CodexReply = { text: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: null } };
 
 function readReply(stdout: string): CodexReply {
   let text: string | undefined;
   let completed = false;
+  let usage: CodexReply["usage"];
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue;
     const event = JSON.parse(line);
-    if (event.type === "turn.completed") completed = true;
+    if (event.type === "turn.completed") {
+      completed = true;
+      const tokens = event.usage;
+      if (Number.isSafeInteger(tokens?.input_tokens) && tokens.input_tokens >= 0 && Number.isSafeInteger(tokens?.output_tokens) && tokens.output_tokens >= 0) {
+        const cacheRead = Number.isSafeInteger(tokens.cached_input_tokens) && tokens.cached_input_tokens >= 0 && tokens.cached_input_tokens <= tokens.input_tokens ? tokens.cached_input_tokens : 0;
+        usage = { input: tokens.input_tokens - cacheRead, output: tokens.output_tokens, cacheRead, cacheWrite: 0, cost: null };
+      }
+    }
     if (event.type === "turn.failed" || event.type === "error") throw new Error();
     if (event.type !== "item.completed") continue;
     if (event.item?.type === "agent_message" && typeof event.item.text === "string") text = event.item.text;
     else if (event.item?.type !== "reasoning") throw new Error();
   }
   if (!completed || !text?.trim()) throw new Error();
-  return { text };
+  return { text, ...(usage && { usage }) };
 }
 
 /** The first adapter supports prompt-only calls with no repository or tools. */

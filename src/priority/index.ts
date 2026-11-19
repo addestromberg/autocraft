@@ -6,6 +6,7 @@
 // recomputed from the mirror's reach signals on every pass, without a model.
 import type { DatabaseSync } from "node:sqlite";
 import { runTiered } from "../agents/step.ts";
+import { textFallbackLabel } from "../agents/call.ts";
 import { PRIORITY } from "../agents/steps.ts";
 import { type Item, refOf } from "../classify/parse.ts";
 import { connect } from "../db.ts";
@@ -92,7 +93,7 @@ export async function runPrioritize(db: DatabaseSync, opts: PrioritizeOptions): 
     else log(`prioritize: no valid answer for ${refOf(item)}`);
   }
   res.rescored = rescore(db);
-  if (res.haikuAlone) log(`Jev unavailable: Haiku rated ${res.haikuAlone} items`);
+  if (res.haikuAlone) log(`Jev unavailable: ${textFallbackLabel()} rated ${res.haikuAlone} items`);
   return res;
 }
 

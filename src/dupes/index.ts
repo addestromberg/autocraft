@@ -14,6 +14,7 @@ import { checkPairs, defaultCheckDeps, uncheckedPairs, type CheckDeps, type Pair
 import { applyDuplicateAnswers, askGroupDecisions } from "./decide.ts";
 import { fillEmbedHashes } from "../itemhash.ts";
 import { scanItem, type ScanItem } from "./scan.ts";
+import { textFallbackLabel } from "../agents/call.ts";
 
 export { duplicateCount, duplicateHeld, notHeldSql } from "./held.ts";
 
@@ -77,8 +78,8 @@ export async function runDupes(db: DatabaseSync, params: DupesParams = {}, log: 
   if (keys.length) {
     const c = await checkPairs(db, keys, d.check, params.onHandled);
     Object.assign(s, { checked: c.checked, jev: c.jev, haiku: c.haiku, verdicts: c.verdicts, unanswered: c.unanswered });
-    log(`dupes: ${keys.length} pairs sent (${c.jev} to Jev, ${c.haiku} answered by Haiku): ${Object.entries(c.verdicts).map(([k, n]) => `${n} ${k}`).join(", ") || "no verdicts"}`);
-    if (c.haikuAlone) log(`dupes: Jev unavailable: Haiku decided ${c.haikuAlone} pairs`);
+    log(`dupes: ${keys.length} pairs sent (${c.jev} to Jev, ${c.haiku} answered by ${textFallbackLabel()}): ${Object.entries(c.verdicts).map(([k, n]) => `${n} ${k}`).join(", ") || "no verdicts"}`);
+    if (c.haikuAlone) log(`dupes: Jev unavailable: ${textFallbackLabel()} decided ${c.haikuAlone} pairs`);
   }
   const when = at().toISOString();
   s.asked = askGroupDecisions(db, undefined, when);

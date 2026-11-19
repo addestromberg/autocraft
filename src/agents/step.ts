@@ -3,7 +3,7 @@
 // lint and fallbacks; the runner does the calls, retries, lint and fix turn (askClaude), the Jev reply parse, the
 // usage rows and the error result.
 import type { DatabaseSync } from "node:sqlite";
-import { queueRoom } from "./call.ts";
+import { currentCodexModel, currentModelProvider, queueRoom } from "./call.ts";
 import { jevAvailable } from "./jev.ts";
 import { jevParallel } from "./accounts.ts";
 import { add, askJev, pool, saveUsage, type AskOptions, type LintedReply, type Usage } from "../classify/run.ts";
@@ -145,7 +145,9 @@ export async function runModelStep<I, V, C = void>(db: DatabaseSync, step: Claud
     const u = opts.usage;
     const total = sizeOf(step, input);
     const items = u.items ? u.items(ok, total, rest === undefined ? 0 : sizeOf(step, rest)) : total - (rest === undefined ? 0 : sizeOf(step, rest));
-    const model = u.model ?? reg.models[0]!;
+    const model = step.provider === "claude" && currentModelProvider() === "codex"
+      ? currentCodexModel() ?? "codex"
+      : u.model ?? reg.models[0]!;
     const saved = step.provider === "jev" ? { ...usage, cost: usage.input * JEV_USD_PER_INPUT_TOKEN } : usage;
     if (u.keepEarlier) db.prepare("UPDATE main.token_usage SET agent = agent || '@' || COALESCE(started_at, '') WHERE run_id = ? AND agent = ?").run(u.run, u.agent);
     saveUsage(db, u.run, u.agent, u.stage, model, items, saved, start, new Date().toISOString());

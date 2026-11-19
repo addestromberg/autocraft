@@ -29,6 +29,7 @@ export class JobError extends Error {
 
 type JobRow = {
   model_provider: ModelProvider | null;
+  codex_model: string | null;
   repo: string | null; id: number; step: string; params: string; requested_by: string; requested_at: string; state: JobState;
   started_at: string | null; ended_at: string | null; progress: string | null; summary: string | null; error: string | null;
   usage: string | null; log_path: string | null; pid: number | null; cancel_requested_at: string | null; cancel_requested_by: string | null;
@@ -54,7 +55,9 @@ export function toJob(r: JobRow, accounts: string[] = []): Job {
     id: r.id, step: r.step, params, requestedBy: r.requested_by, requestedAt: r.requested_at,
     state: r.state, startedAt: r.started_at, endedAt: r.ended_at, progress: r.progress, summary: r.summary, error: r.error,
     cancelRequested: r.cancel_requested_at !== null, usage: parseJson<JobUsage | null>(r.usage, null),
-    models: modelsOf(knownStep(r.step), params), accounts,
+    models: r.model_provider === "codex"
+      ? modelsOf(knownStep(r.step), params).map((model) => model === "jev" ? model : r.codex_model ?? "codex")
+      : modelsOf(knownStep(r.step), params), accounts,
     ...(r.model_provider && { modelProvider: r.model_provider }),
   };
 }

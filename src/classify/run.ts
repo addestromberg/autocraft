@@ -227,7 +227,7 @@ export function promptVersion(id: ClaudePromptId | JevPromptId): string {
 }
 
 /** Item refs of a prompt's input: items carry repo and number, review PRs a `repo#number` ref. A run without refs is shown to operators only. */
-function refsOf(input: readonly unknown[]): ItemRef[] {
+export function refsOf(input: readonly unknown[]): ItemRef[] {
   const out: ItemRef[] = [];
   for (const x of input as { repo?: string; number?: number; ref?: string; a?: { number: number }; b?: { number: number }; items?: unknown[] }[]) {
     if (typeof x.repo === "string" && typeof x.number === "number") out.push({ repo: x.repo, number: x.number });
@@ -357,6 +357,7 @@ export type LintedReply = Reply & { problems?: LintProblem[]; fixTurn?: boolean 
 
 /** The follow-up message for a patch call whose model answered without running clippy. */
 export const CHECK_REMINDER = "You have not run the check tool with command clippy on your final diff. Before you answer you must: call check with command fmt and then command clippy, passing your complete final diff as patch; fix what they report; and reply with the final diff that passed, as the diff only.";
+
 
 /** Whether a reply with a diff of Rust files came from a call that never got a clippy result from the check tool. */
 export function needsClippy(tool: Pick<CheckTool, "ran">, reply: string): boolean {

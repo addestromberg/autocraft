@@ -11,6 +11,7 @@ import { cliGate, jobLimit } from "./autopilot.ts";
 import { checkRequest, endJob, JobError, jobProvider, now } from "./jobs.ts";
 import { logsDir } from "./runner.ts";
 import { loadSteps, type StepDef } from "./steps.ts";
+import { selectedCodexModel } from "../agents/codex/models.ts";
 
 /** How a command maps to a step. `apply`: a job only with --apply (a dry run without it stays read-only); `dry-run`: a job unless --dry-run; `always`: always. */
 export type CliStep = { step: string; when: "apply" | "dry-run" | "always" };
@@ -64,8 +65,10 @@ export async function runCliJob(db: DatabaseSync, req: CliRequest): Promise<numb
       mkdirSync(logsDir(), { recursive: true });
       const t = now();
       const repo = typeof full.repo === "string" ? full.repo : null;
-      job = Number(db.prepare("INSERT INTO jobs (step, params, repo, requested_by, requested_at, state, started_at, model_provider) VALUES (?, ?, ?, 'cli', ?, 'running', ?, ?)")
-        .run(step.name, JSON.stringify(full), repo, t, t, jobProvider(db, step, params)).lastInsertRowid);
+      const provider = jobProvider(db, step, params);
+      const model = provider === "codex" ? selectedCodexModel(db, step.name) ?? null : null;
+      job = Number(db.prepare("INSERT INTO jobs (step, params, repo, requested_by, requested_at, state, started_at, model_provider, codex_model) VALUES (?, ?, ?, 'cli', ?, 'running', ?, ?, ?)")
+        .run(step.name, JSON.stringify(full), repo, t, t, provider, model).lastInsertRowid);
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");

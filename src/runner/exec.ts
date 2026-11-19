@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { JobUsage } from "../../web/src/api/types.ts";
 import { setCallContext, StoppedError } from "../agents/call.ts";
 import { connect } from "../db.ts";
+import { supportsCodexWorkflow } from "../agents/provider.ts";
 import { trackedNames } from "../repos.ts";
 import { AUTOPILOT_USER, isEnabled } from "./autopilot.ts";
 import { leaseSkipKeys, leaseSkips } from "./leases.ts";
@@ -49,7 +50,7 @@ export async function execJob(id: number): Promise<number> {
 
   const step = (await loadSteps()).get(row.step);
   if (!step) return fail(`no step ${row.step} in this build`);
-  if (row.model_provider === "codex") return fail(`Codex is selected but does not yet support ${step.name}`);
+  if (row.model_provider === "codex" && !supportsCodexWorkflow(step.name)) return fail(`Codex is selected but does not yet support ${step.name}`);
   console.log(`${new Date().toISOString()} job ${id}: ${step.name} ${row.params}, requested by ${row.requested_by}`);
   let params;
   try {
@@ -82,7 +83,7 @@ export async function execJob(id: number): Promise<number> {
     },
     stopping: () => ctx.cancelled() || (row.requested_by === AUTOPILOT_USER && !isEnabled(db)),
   };
-  setCallContext({ jobId: id, step: step.name, stage: step.stage, modelProvider: row.model_provider ?? undefined, class: step.priority ?? 0, ...(typeof params.repo === "string" && { repo: params.repo }), cancelled: ctx.cancelled, stopping: ctx.stopping });
+  setCallContext({ jobId: id, step: step.name, stage: step.stage, modelProvider: row.model_provider ?? undefined, codexModel: row.codex_model ?? undefined, class: step.priority ?? 0, ...(typeof params.repo === "string" && { repo: params.repo }), cancelled: ctx.cancelled, stopping: ctx.stopping });
   try {
     const summary = await step.run(ctx);
     saveUsage();

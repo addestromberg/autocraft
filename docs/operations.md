@@ -88,6 +88,14 @@ Use a separate development database and the dedicated Codex home. Start `node sr
 
 For the live fallback pass, disable Jev in the isolated test database so Codex gets the text calls. Run `node --test test/codex-text-workflows.test.ts` locally to verify that a confident Jev verdict stays with Jev and an uncertain one goes to Codex. Run `pnpm check`, build the dashboard, and include both live and local results in the milestone PR.
 
+#### Scoped Codex checkout access
+
+The repository-aware Codex adapter uses a pinned checkout built by AutoCraft and a separate stdio app-server process. The model can list directories, read bounded file ranges, and read explicitly scoped items from the existing read-only item snapshot. AutoCraft dispatches those tools and frames their data as untrusted. Absolute paths, traversal, symlinks, and repository instruction files are refused. The scoped tool set has no write, shell, GitHub, or network operations.
+
+The app server starts in an empty directory with an explicit environment, built-in shell access, web search, and external integrations disabled. Its dedicated Codex home must be free of CLI configuration. The Codex path uses no Claude executable or Bubblewrap dependency. It fails if the scoped reader or app-server protocol cannot start.
+
+Run `node --test test/codex-read-tools.test.ts` in Incus for the access boundary checks. The live fixture uses the connected account to read a file from a built commit checkout and one authorized item from a synthetic item snapshot. Scheduled workflow integration will enable scoped tools where each workflow permits them.
+
 ### Sync
 
 `autocraft sync` (every minute) runs one org-wide GitHub search for items updated since the newest `updatedAt` stored (`org_high_water`) minus 10 minutes, up to the run's start. The search returns at most 1,000 results, so a window with more matches is cut into `updated:A..B` slices, halving until each fits. A one-second slice with more than 1,000 matches is read by listing every tracked repo down to that second (with a logged warning); until the run finishes, neither `org_high_water` nor a repo's `high_water` moves. GitHub's search index can lag, so once an hour (`search_catchup_at`) the same search also re-reads the 6 hours before `org_high_water`, sliced the same way. `org_high_water` moves to the newest `updatedAt` seen, not to the start time. An item whose stored row equals what GitHub returned is not written again. Items of untracked repos are dropped before anything else is done with them. Per-repo passes run only for the first sync, for a repo that was just tracked (tracking clears its `high_water` and `synced_at`) and for `--per-repo`, `--all` and `--repo`.

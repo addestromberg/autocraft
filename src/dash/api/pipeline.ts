@@ -20,6 +20,7 @@ import { isQuiet } from "../../security/quiet.ts";
 import { canSeeInternals } from "./staff.ts";
 import { SECURITY_STEP } from "../../security/rules.ts";
 import { isModelProvider, providerSettings, setProviderSettings } from "../../agents/provider.ts";
+import { codexModelSettings, listCodexModels, setCodexModelSettings } from "../../agents/codex/models.ts";
 
 // Stages of docs/pipeline.md. A stage with registered steps shows them; the
 // mirror also runs on its own timer.
@@ -218,6 +219,28 @@ export async function putProviderConfig(db: DatabaseSync, req: Req) {
   setProviderSettings(db, settings);
   audit(db, req.user.login, "model-provider", workflow || "pipeline", { provider });
   return { ...settings, availableWorkflows };
+}
+
+export const getCodexModelSettings = (db: DatabaseSync) => codexModelSettings(db);
+export const getCodexModelList = async () => ({ models: await listCodexModels().catch(() => null) });
+
+export async function putCodexModelSettings(db: DatabaseSync, req: Req) {
+  requireOperator(req);
+  const { workflow, model } = body(req);
+  const availableWorkflows = await providerWorkflows();
+  if (typeof workflow !== "string" || (workflow && !availableWorkflows.includes(workflow))) {
+    throw new HttpError(400, "unknown model workflow");
+  }
+  if (model !== null && (typeof model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model))) {
+    throw new HttpError(400, "enter a model ID or leave it blank");
+  }
+  const settings = codexModelSettings(db);
+  if (!workflow) settings.defaultModel = model;
+  else if (model === null) delete settings.workflows[workflow];
+  else settings.workflows[workflow] = model;
+  setCodexModelSettings(db, settings);
+  audit(db, req.user.login, "codex-model", workflow || "pipeline", { model });
+  return settings;
 }
 
 export async function putState(db: DatabaseSync, req: Req) {

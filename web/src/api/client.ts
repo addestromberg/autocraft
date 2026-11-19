@@ -42,6 +42,7 @@ import type {
   CodexAccount,
   ModelProvider,
   ModelProviderConfig,
+  CodexModelSettings,
   UsagePause,
   JevStatus,
   Rates,
@@ -349,6 +350,9 @@ export interface Api {
   pipeline: {
     providerConfig(): Promise<ModelProviderConfig>;
     setProvider(workflow: string, provider: ModelProvider | null): Promise<ModelProviderConfig>;
+    codexModels(): Promise<CodexModelSettings>;
+    setCodexModel(workflow: string, model: string | null): Promise<CodexModelSettings>;
+    listCodexModels(): Promise<{ models: string[] | null }>;
     overview(): Promise<PipelineOverview>;
     jobs(filter: JobFilter): Promise<JobList>;
     job(id: number): Promise<JobDetail>;

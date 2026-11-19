@@ -1,21 +1,31 @@
 // Starting a model call: picks the account (Claude) and records the agent run,
 // in one transaction so two job processes cannot both take the last slot.
 import type { DatabaseSync } from "node:sqlite";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { boxAccounts } from "./box.ts";
 import { accountHasRoom, chooseAccount, freeSlots, RUN_SLOT_MS, type Choice } from "./accounts.ts";
 import { insertRun, onRunEnd, type RunStart } from "./runs.ts";
 import { scrubError } from "./text.ts";
 import { levelBand } from "../rank/level.ts";
 import type { ModelProvider } from "../../web/src/api/types.ts";
+import { selectProvider, supportsCodexWorkflow } from "./provider.ts";
+import { selectedCodexModel } from "./codex/models.ts";
 
 /** Set by the job process: which job and step the calls belong to, and whether a cancel was asked. */
 export type CallContext = { jobId: number; step: string; stage: number; modelProvider?: ModelProvider; codexModel?: string; /** Queue class of the step (StepDef.priority). */ class?: 0 | 1 | 2; /** The job's repo param. */ repo?: string; cancelled(): boolean; /** True once the job is cancelled or the pipeline is switched off: no new model call starts. */ stopping?(): boolean };
 let context: CallContext | null = null;
+const modelSelection = new AsyncLocalStorage<{ provider: ModelProvider; model?: string }>();
 export const setCallContext = (c: CallContext | null): void => void (context = c);
 /** The job this process runs, or null outside a job. */
 export const currentJobId = (): number | null => context?.jobId ?? null;
-export const currentModelProvider = (): ModelProvider => context?.modelProvider ?? "claude";
-export const currentCodexModel = (): string | undefined => context?.codexModel;
+export const currentModelProvider = (): ModelProvider => context ? context.modelProvider ?? "claude" : modelSelection.getStore()?.provider ?? "claude";
+export const currentCodexModel = (): string | undefined => context ? context.codexModel : modelSelection.getStore()?.model;
+export function withWorkflowProvider<T>(db: DatabaseSync, workflow: string, work: () => T): T {
+  if (context || modelSelection.getStore()) return work();
+  const provider = selectProvider(db, workflow);
+  if (provider === "codex" && !supportsCodexWorkflow(workflow)) throw new Error(`Codex is selected but does not yet support ${workflow}`);
+  return modelSelection.run({ provider, model: provider === "codex" ? selectedCodexModel(db, workflow) : undefined }, work);
+}
 export const recordedModel = (claudeModel: string): string => currentModelProvider() === "codex" ? currentCodexModel() ?? "codex" : claudeModel;
 export const textFallbackLabel = (): string => currentModelProvider() === "codex" ? "Codex" : "Haiku";
 export const modelCallStopping = (): boolean => context?.cancelled() === true || context?.stopping?.() === true;

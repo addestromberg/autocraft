@@ -10,10 +10,11 @@ import { jobItem } from "../runner/job-items.ts";
 import { referenceDir } from "../reference.ts";
 import { defaultSemanticDeps, type SemanticDeps } from "../reference-lint.ts";
 import type { DatabaseSync } from "node:sqlite";
-import { queueRoom } from "../agents/call.ts";
+import { currentModelProvider, queueRoom, recordedModel } from "../agents/call.ts";
 import { runModelStep } from "../agents/step.ts";
 import { COMPARE_ISSUES, COMPARE_PRS } from "../agents/steps.ts";
-import { add, askClaude, pool, saveUsage, type Usage } from "../classify/run.ts";
+import { add, pool, saveUsage, type Usage } from "../classify/run.ts";
+import { askTextModel } from "../agents/text-call.ts";
 import { audit } from "../dash/audit.ts";
 import { connect } from "../db.ts";
 import { ownerOf } from "../owners.ts";
@@ -69,7 +70,7 @@ export function defaultCompareDeps(db: DatabaseSync): CompareDeps {
     querier: new Client(500), fetchDiff: ghDiff,
     baseCheckout: (repo) => baseCheckout(db, repo),
     ask: ((id: "dupes.compare-prs.opus" | "dupes.compare-issues.sonnet", model: string, input: ComparePrs | CompareIssues, checkout?: string, lint?: Lint) =>
-      askClaude(id, model, [input] as never, db, { checkout, reference: checkout ? referenceDir(input.ref.split("#")[0]!) : undefined, lint })) as CompareDeps["ask"],
+      askTextModel(id, model, [input] as never, db, { checkout, reference: checkout ? referenceDir(input.ref.split("#")[0]!) : undefined, lint })) as CompareDeps["ask"],
     now: () => new Date(),
   };
 }
@@ -156,7 +157,7 @@ async function compareChunk(x: Ctx, s: KindSet, numbers: number[], usage: { u: U
     }
     if (checkout) input.repo_dir = REPO_PATH;
     const model = PR_PROMPT.models[0]!;
-    usage.model = model;
+    usage.model = recordedModel(model);
     // Carry points reach the close comment and the kept PR's suggestion: they get the reference checks of posted text.
     const dir = referenceDir(s.repo);
     const semantic = dir ? deps.semantic ?? defaultSemanticDeps(x.db, input.ref) : undefined;
@@ -166,7 +167,7 @@ async function compareChunk(x: Ctx, s: KindSet, numbers: number[], usage: { u: U
   }
   const input = issueInput(x.db, s.repo, numbers);
   const model = ISSUE_PROMPT.models[0]!;
-  usage.model = model;
+  usage.model = recordedModel(model);
   const r = await runModelStep(x.db, COMPARE_ISSUES, { numbers, input }, { ask: (i) => deps.ask("dupes.compare-issues.sonnet", model, i.input) });
   usage.u = add(usage.u, r.usage);
   return r.ok ? r.value : null;
@@ -193,6 +194,7 @@ async function compareSet(x: Ctx, s: KindSet): Promise<StoredComparison> {
       const r = await compareChunk(x, s, chunk, usage);
       if (!r) {
         saveUsage(x.db, x.runId, `dupes-compare-${s.key.replace(/[^A-Za-z0-9]/g, "-")}`, "dupes", usage.model, 0, usage.u, start, NOW_ISO(x.deps));
+        if (currentModelProvider() === "codex") throw new Error(`No valid Codex comparison for ${s.key}`);
         return viaRule(x.db, s, at, "no valid answer from the model", "rule");
       }
       winners.push(r.keep);

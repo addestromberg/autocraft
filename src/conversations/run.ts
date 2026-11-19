@@ -4,7 +4,7 @@ import { jobItem } from "../runner/job-items.ts";
 import { referenceDir } from "../reference.ts";
 import { REPO_PATH } from "../sandbox/command.ts";
 import type { DatabaseSync } from "node:sqlite";
-import { queueRoom } from "../agents/call.ts";
+import { currentModelProvider, queueRoom, recordedModel, withWorkflowProvider } from "../agents/call.ts";
 import { pool } from "../classify/run.ts";
 import { runModelStep } from "../agents/step.ts";
 import { CONVERSATION } from "../agents/steps.ts";
@@ -70,13 +70,19 @@ export async function answerPending(db: DatabaseSync, p: ConversationParams): Pr
       model, checkout: checkout ?? undefined, reference: checkout ? dir : undefined, onProgress, ctx: { db, repo, n, dir, semantic },
       usage: { run: p.usageRun, agent: `conversation-${String(k).padStart(3, "0")}`, stage: "conversation", items: () => 1 },
       onReply: (reply) => { if (reply.fixTurn) p.log(`conversation: ${repo}#${n}: reply lint: ${reply.problems?.length ? `${reply.problems.length} problems left after the fix turn` : "fixed by one fix turn"}`); },
+    }).catch((error) => {
+      if (currentModelProvider() === "codex") {
+        shown.flush();
+        failTurn(db, repo, n, claim, "Codex could not answer this message; see the job or agent run");
+      }
+      throw error;
     });
     shown.flush();
     const parsed = r.ok ? r.value : null;
     if (parsed) {
-      if (storeReply(db, repo, n, claim, parsed.text, parsed.cards, parsed.notes, undefined, parts.seen, parsed.choices && parsed.decision ? { decision: parsed.decision, parsed: parsed.choices, source: "conversation", by: model, stampThen } : undefined) !== null) { answered++; jobItem(db, repo, n, "answered a message", p.log); }
+      if (storeReply(db, repo, n, claim, parsed.text, parsed.cards, parsed.notes, undefined, parts.seen, parsed.choices && parsed.decision ? { decision: parsed.decision, parsed: parsed.choices, source: "conversation", by: recordedModel(model), stampThen } : undefined) !== null) { answered++; jobItem(db, repo, n, "answered a message", p.log); }
     } else {
-      failTurn(db, repo, n, claim, "Opus gave no usable reply; send the message again");
+      failTurn(db, repo, n, claim, `${currentModelProvider() === "codex" ? "Codex" : "Opus"} gave no usable reply; send the message again`);
       jobItem(db, repo, n, "no usable reply to a message", p.log);
     }
   }), () => queueRoom(db), { first: true });
@@ -95,10 +101,10 @@ export async function runConversations(db: DatabaseSync, p: { limit: number; onH
   sweepRunningCards(db);
   const usageRun = `conversation-${now().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}`;
   const waiting = pendingConversations(db).length;
-  const answered = await answerPending(db, {
+  const answered = await withWorkflowProvider(db, "conversation", () => answerPending(db, {
     ...p, usageRun, log, diff: githubDiff,
     checkout: (repo) => import("../dupes/compare.ts").then((m) => m.baseCheckout(db, repo)),
-  });
+  }));
   log(`conversation: ${answered} of ${waiting} messages answered`);
   return { answered, waiting, usageRun };
 }

@@ -157,7 +157,7 @@ With the development Codex account connected, set `AUTOCRAFT_CODEX_HOME` to its 
 env -u AUTOCRAFT_ACCOUNTS -u AUTOCRAFT_ACCOUNTS_ROOT node scripts/verify-codex-repair.mjs
 ```
 
-The script fetches a pinned public Rust fixture, asks Codex for a patch, and runs AutoCraft’s actual baseline and patched worker plans. It checks that the baseline fails the status-label assertion after a successful build and that the patched build, test, regression, format, and Clippy steps pass. The fixture script uses a temporary database and does not publish changes to GitHub.
+The script fetches a pinned public Rust fixture, asks Codex for a patch, and runs AutoCraft’s baseline and patched worker plans through the coordinator task queue. It checks that the baseline fails the status-label assertion after a successful build and that the patched build, test, regression, format, and Clippy steps pass. The script verifies the stored task details and logs used by the dashboard. The fixture script uses a temporary database and does not publish changes to GitHub.
 
 The script uses the worker’s default namespace configuration unless `AUTOCRAFT_FIXTURE_USERNS` is set. The Incus acceptance run used `AUTOCRAFT_FIXTURE_USERNS=host` with rootless Podman for this synthetic fixture after the default image ownership mapping timed out.
 

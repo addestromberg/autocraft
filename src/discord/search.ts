@@ -4,7 +4,8 @@
 // kept only for the length of the call: it is not stored, logged or sent anywhere but that one model call, and the
 // prompt and reply texts the call records are deleted when it ends.
 import type { DatabaseSync } from "node:sqlite";
-import { askClaude } from "../classify/run.ts";
+import { askTextModel } from "../agents/text-call.ts";
+import { withWorkflowProvider } from "../agents/call.ts";
 import type { Embedder } from "../embed/model.ts";
 import type { VectorIndex } from "../embed/vectors.ts";
 import { DEFAULT_OWNER } from "../owners.ts";
@@ -38,7 +39,7 @@ function byActivity(a: Candidate, b: Candidate): number {
 export type Ask = (db: DatabaseSync, input: PickInput) => Promise<string | null>;
 
 export const askHaiku: Ask = async (db, input) => {
-  const reply = await askClaude("discord.search", "haiku", [input], db, { maxWaitMs: MODEL_WAIT_MS });
+  const reply = await withWorkflowProvider(db, "discord-search", () => askTextModel("discord.search", "haiku", [input], db, { maxWaitMs: MODEL_WAIT_MS }));
   return reply?.text ?? null;
 };
 

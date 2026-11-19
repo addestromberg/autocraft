@@ -12,7 +12,8 @@ import { fixTurnMessage, mergeFixFields, needsFixTurn } from "../../replylint.ts
 import { scrub } from "../../runner/scrub.ts";
 import { VERIFY_OPTIONAL_TEST } from "../../security/prompts.ts";
 
-const supported = new Set<ClaudePromptId>(["classify.haiku", "priority.haiku", "dupes.haiku", "areas.haiku", "referee.sonnet", "lint.reference.haiku", "areas.suggest", "dupes.compare-issues.sonnet"]);
+const supported = new Set<ClaudePromptId>(["classify.haiku", "priority.haiku", "dupes.haiku", "areas.haiku", "referee.sonnet", "lint.reference.haiku", "areas.suggest", "dupes.compare-issues.sonnet",
+  "discord.search", "discord.issue-questions", "discord.issue-draft", "discord.signal.haiku", "discord.junk.haiku"]);
 const checkoutPrompts = new Set<ClaudePromptId>(["decide.prepare", "review.opus", "premerge.opus", "postmerge.opus", "security.model", "security.area", "security.verify",
   "conversation.turn", "areas.propose", "dupes.compare-prs.opus"]);
 const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null };
@@ -38,7 +39,8 @@ export async function runCodexStep<K extends ClaudePromptId>(id: K, input: Claud
     const run = insertRun(db, { ...context, promptId: id, promptVersion: promptVersion(id), provider: "codex",
       model: model ?? "codex", accountId: null, items, prompt });
     try {
-      const reply = await runCodex({ prompt, model, signal: controller.signal });
+      const timeoutMs = id.startsWith("discord.") || id === "lint.reference.haiku" ? opts.maxWaitMs : undefined;
+      const reply = await runCodex({ prompt, model, signal: controller.signal, timeoutMs });
       const text = scrub(reply.text);
       const problems = await opts.lint?.(text, "fix");
       finishRun(db, run, { state: "done", tokens: reply.usage, output: text,

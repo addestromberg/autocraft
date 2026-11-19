@@ -8,7 +8,8 @@
 // length-capped and stripped of mentions and foreign links before it is shown.
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { askClaude } from "../classify/run.ts";
+import { askTextModel } from "../agents/text-call.ts";
+import { withWorkflowProvider } from "../agents/call.ts";
 import { publicRepoNames } from "../public/status.ts";
 import { BUTTON_URL_MAX, ISSUE_URL_MAX, cleanDraft, followUp, formDraft, issueUrl, sanitize, seedOf, type PublicRepo } from "./issue-draft.ts";
 import { FOLLOW_UPS, ISSUE_ANSWER_CHARS, ISSUE_BODY_CHARS, ISSUE_FORM_BODY_CHARS, ISSUE_TITLE_CHARS, parseDraft, parseQuestions, type FollowUpId, type IssueDraftInput, type IssueQuestionsInput } from "./issue-prompt.ts";
@@ -37,7 +38,7 @@ export type IssueAsk = {
   (db: DatabaseSync, id: "discord.issue-draft", input: IssueDraftInput): Promise<string | null>;
 };
 export const askIssueModel: IssueAsk = (async (db: DatabaseSync, id: "discord.issue-questions", input: IssueQuestionsInput) =>
-  (await askClaude(id, "haiku", [input], db, { maxWaitMs: MODEL_WAIT_MS }))?.text ?? null) as IssueAsk;
+  (await withWorkflowProvider(db, "discord-issue", () => askTextModel(id, "haiku", [input], db, { maxWaitMs: MODEL_WAIT_MS })))?.text ?? null) as IssueAsk;
 
 export function issueCapUsd(db: DatabaseSync): number {
   const v = Number((db.prepare("SELECT value FROM settings WHERE key = ?").get(ISSUE_CAP_KEY) as { value: string } | undefined)?.value);

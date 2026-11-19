@@ -19,7 +19,7 @@ import { filtered, hiddenTest, type HiddenRepos } from "../../hidden-sql.ts";
 import { isQuiet } from "../../security/quiet.ts";
 import { canSeeInternals } from "./staff.ts";
 import { SECURITY_STEP } from "../../security/rules.ts";
-import { isModelProvider, providerSettings, setProviderSettings } from "../../agents/provider.ts";
+import { isModelProvider, providerSettings, setProviderSettings, standaloneModelWorkflows } from "../../agents/provider.ts";
 import { codexModelSettings, listCodexModels, setCodexModelSettings } from "../../agents/codex/models.ts";
 
 // Stages of docs/pipeline.md. A stage with registered steps shows them; the
@@ -192,9 +192,10 @@ export async function cancel(db: DatabaseSync, req: Req): Promise<Job> {
 export const state = (db: DatabaseSync, req: Req) => pipelineState(db, req);
 
 async function providerWorkflows() {
-  return [...(await loadSteps()).values()]
+  const jobWorkflows = [...(await loadSteps()).values()]
     .filter((step) => typeof step.models === "function" || step.models?.some((model) => model !== "jev"))
     .map((step) => step.name);
+  return [...jobWorkflows, ...standaloneModelWorkflows];
 }
 
 export async function getProviderConfig(db: DatabaseSync) {

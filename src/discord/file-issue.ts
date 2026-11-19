@@ -2,6 +2,7 @@
 // the limits. The Discord flow (src/discord/issue-new.ts) calls fileIssue() when the person presses File it.
 // The reporter's token set is kept by src/discord/reporter.ts; the sign-in routes are src/dash/server/reporter-signin.ts.
 import type { DatabaseSync } from "node:sqlite";
+import { withWorkflowProvider } from "../agents/call.ts";
 import { jevAvailable } from "../agents/jev.ts";
 import { runModelStep, type ClaudeStep, type JevStep } from "../agents/step.ts";
 import { envVar } from "../env.ts";
@@ -74,7 +75,10 @@ const HAIKU_STEP: ClaudeStep<JunkAsk, boolean> = {
 const MODEL_WAIT_MS = 20_000;
 const modelJudge: NonNullable<FileHooks["judge"]> = {
   jev: async (db, a) => { const r = await runModelStep(db, JEV_STEP, a); return r.ok ? r.value : null; },
-  haiku: async (db, a) => { const r = await runModelStep(db, HAIKU_STEP, a, { maxWaitMs: MODEL_WAIT_MS }); return r.ok ? r.value : null; },
+  haiku: async (db, a) => {
+    const r = await withWorkflowProvider(db, "discord-issue", () => runModelStep(db, HAIKU_STEP, a, { maxWaitMs: MODEL_WAIT_MS }));
+    return r.ok ? r.value : null;
+  },
 };
 
 /** Jev first, Haiku where Jev is unsure or unavailable. With no model answer the draft is not filed ("unknown"): the person still has the GitHub link. The texts of the calls are deleted when they end. */

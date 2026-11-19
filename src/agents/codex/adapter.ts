@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { TextAgentAdapter } from "../types.ts";
 import { account, codexCommand } from "./account.ts";
 
-type CodexRequest = { prompt: string; model?: string; signal?: AbortSignal };
+type CodexRequest = { prompt: string; model?: string; signal?: AbortSignal; timeoutMs?: number };
 type CodexReply = { text: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: null } };
 
 function readReply(stdout: string): CodexReply {
@@ -33,7 +33,7 @@ function readReply(stdout: string): CodexReply {
 }
 
 /** The first adapter supports prompt-only calls with no repository or tools. */
-export const runCodex: TextAgentAdapter<CodexRequest, CodexReply> = async ({ prompt, model, signal }) => {
+export const runCodex: TextAgentAdapter<CodexRequest, CodexReply> = async ({ prompt, model, signal, timeoutMs = 120_000 }) => {
   if ((await account("")).state !== "connected") throw new Error("Connect a Codex account in Accounts before running Codex");
   const { bin, options } = codexCommand();
   const cwd = await mkdtemp(join(tmpdir(), "autocraft-codex-"));
@@ -49,8 +49,8 @@ export const runCodex: TextAgentAdapter<CodexRequest, CodexReply> = async ({ pro
       ...(model ? ["--model", model] : []), "-",
     ];
     const stdout = await new Promise<string>((resolve, reject) => {
-      const child = execFile(bin, args, { cwd, env: options.env, signal, timeout: 120_000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, output) => {
-        if (error) reject(new Error(signal?.aborted ? "Codex execution cancelled" : model ? `Codex could not run model ${model}; check that the connected account can use it` : "Codex execution failed"));
+      const child = execFile(bin, args, { cwd, env: options.env, signal, timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, output) => {
+        if (error) reject(new Error(signal?.aborted ? "Codex execution cancelled" : error.killed ? "Codex execution timed out" : model ? `Codex could not run model ${model}; check that the connected account can use it` : "Codex execution failed"));
         else resolve(output);
       });
       child.stdin?.on("error", () => {});

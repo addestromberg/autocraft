@@ -40,6 +40,8 @@ import type {
   AgentRunPage,
   ClaudeAccount,
   CodexAccount,
+  ModelProvider,
+  ModelProviderConfig,
   UsagePause,
   JevStatus,
   Rates,
@@ -345,6 +347,8 @@ export interface Api {
   batch(id: number): Promise<BatchDetail>;
   /** Steps, jobs, the on/off switch and the stage limits: everyone reads; run, cancel, switch and limits are for operators. */
   pipeline: {
+    providerConfig(): Promise<ModelProviderConfig>;
+    setProvider(workflow: string, provider: ModelProvider | null): Promise<ModelProviderConfig>;
     overview(): Promise<PipelineOverview>;
     jobs(filter: JobFilter): Promise<JobList>;
     job(id: number): Promise<JobDetail>;

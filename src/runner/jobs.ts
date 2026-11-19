@@ -3,11 +3,12 @@
 import { filtered, hiddenTest, isHiddenRepo, type HiddenRepos } from "../hidden-sql.ts";
 import { closeSync, fstatSync, openSync, readSync, unlinkSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import type { Job, JobDetail,  JobFilter, JobList, JobParams, JobState, JobUsage } from "../../web/src/api/types.ts";
+import type { Job, JobDetail, JobFilter, JobList, JobParams, JobState, JobUsage, ModelProvider } from "../../web/src/api/types.ts";
+import { selectProvider } from "../agents/provider.ts";
 import { trackedNames } from "../repos.ts";
 import { accountLabelsByJob, failRunning } from "../agents/runs.ts";
 import { releaseJob } from "./leases.ts";
-import { knownStep, loadSteps, modelsOf, ParamError, validateParams, type StepDef } from "./steps.ts";
+import { knownStep, loadSteps, modelsOf, ParamError, usesClaude, validateParams, type Params, type StepDef } from "./steps.ts";
 import { shownLookup } from "../dash/api/shown.ts";
 import { blankIfHidden } from "../dash/api/visible.ts";
 
@@ -27,11 +28,16 @@ export class JobError extends Error {
 }
 
 type JobRow = {
+  model_provider: ModelProvider | null;
   repo: string | null; id: number; step: string; params: string; requested_by: string; requested_at: string; state: JobState;
   started_at: string | null; ended_at: string | null; progress: string | null; summary: string | null; error: string | null;
   usage: string | null; log_path: string | null; pid: number | null; cancel_requested_at: string | null; cancel_requested_by: string | null;
   items: number | null;
 };
+
+export function jobProvider(db: DatabaseSync, step: StepDef, params: Params): ModelProvider | null {
+  return usesClaude(modelsOf(step, params)) ? selectProvider(db, step.name) : null;
+}
 
 function parseJson<T>(s: string | null, fallback: T): T {
   try {
@@ -49,6 +55,7 @@ export function toJob(r: JobRow, accounts: string[] = []): Job {
     state: r.state, startedAt: r.started_at, endedAt: r.ended_at, progress: r.progress, summary: r.summary, error: r.error,
     cancelRequested: r.cancel_requested_at !== null, usage: parseJson<JobUsage | null>(r.usage, null),
     models: modelsOf(knownStep(r.step), params), accounts,
+    ...(r.model_provider && { modelProvider: r.model_provider }),
   };
 }
 

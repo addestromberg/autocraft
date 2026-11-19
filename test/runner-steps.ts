@@ -2,10 +2,24 @@
 // They call no model and touch nothing outside the test database.
 import { setTimeout as sleep } from "node:timers/promises";
 import type { StepDef } from "../src/runner/steps.ts";
+import { currentModelProvider } from "../src/agents/call.ts";
 
 export const FAKE_TOKEN = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8";
 
 export const steps: StepDef[] = [
+  {
+    name: "test-provider",
+    title: "Provider pin",
+    description: "Reports the job's pinned provider.",
+    stage: 2,
+    requires: "operator",
+    params: [],
+    models: ["jev", "haiku"],
+    run: async () => {
+      await sleep(100);
+      return currentModelProvider();
+    },
+  },
   {
     name: "test-echo",
     title: "Echo",

@@ -205,6 +205,7 @@ The mock API serves fixture data; pick the role with `?as=operator|maintainer|vi
 For Codex adapter development in Incus, follow the [local verification and PR check runbook](docs/operations.md#codex-adapter-development-in-incus).
 Use `classify --classifier codex` to classify one mirrored issue with the connected Codex account. Existing workflows continue to use their configured providers.
 See [Codex parity](docs/codex-parity.md) for the workflow inventory and acceptance criteria.
+Operators can set the default model provider and workflow overrides on the Pipeline page. Scheduled Codex support is being rolled out workflow by workflow.
 
 | Path | Contents |
 |---|---|

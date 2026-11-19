@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PauseIcon, PlayIcon } from "@phosphor-icons/react";
 import { useApi, useQuery } from "../../api/client";
-import type { PipelineState, StageLimit } from "../../api/types";
+import type { ModelProvider, PipelineState, StageLimit } from "../../api/types";
 import { dayResetLocal, num, when } from "../../lib/format";
 import { TimeAgo } from "../../ui/atoms/TimeAgo";
 import { useUser } from "../../shell/UserContext";
@@ -297,6 +297,46 @@ export function PilotPanel({ className }: { className?: string }) {
 
 const MODEL_LABEL: Record<string, string> = { opus: "Opus", sonnet: "Sonnet" };
 const modelLabel = (m: string) => MODEL_LABEL[m] ?? m;
+
+export function ModelProviderControl() {
+  const operator = useUser().role === "operator";
+  return operator ? <ProviderSettingsForm /> : null;
+}
+
+function ProviderSettingsForm() {
+  const api = useApi();
+  const query = useQuery("model-provider-config", (a) => a.pipeline.providerConfig());
+  const write = useWrite();
+  const [workflow, setWorkflow] = useState("");
+  const config = query.data;
+  const value = workflow ? config?.workflows[workflow] ?? "" : config?.defaultProvider ?? "claude";
+  return (
+    <Block title="Model provider">
+      {config && <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-sm">
+          Workflow
+          <Select value={workflow} onChange={(event) => setWorkflow(event.target.value)} disabled={write.busy !== null}>
+            <option value="">Instance default</option>
+            {config.availableWorkflows.map((name) => <option key={name} value={name}>{name}</option>)}
+          </Select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Provider
+          <Select value={value} disabled={write.busy !== null} onChange={(event) => {
+            const provider = (event.target.value || null) as ModelProvider | null;
+            void write.run("provider", () => api.pipeline.setProvider(workflow, provider)).then(() => query.refetch());
+          }}>
+            {workflow && <option value="">Use instance default</option>}
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+          </Select>
+        </label>
+      </div>}
+      <p className="mt-2 text-sm text-ink/60">New jobs use this setting. Workflows awaiting Codex support report an error when Codex is selected.</p>
+      <ErrorLine error={write.error ?? query.error?.message} />
+    </Block>
+  );
+}
 
 /** The model that prepares every question's options and recommendation. Operators pick it; everyone else sees it. */
 export function JudgementModel({ className }: { className?: string }) {

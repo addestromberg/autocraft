@@ -68,6 +68,10 @@ Start the dashboard, connect Codex, and restart the dashboard before classificat
 
 Run `pnpm check`, the dashboard build, and the relevant tests locally. For the v1 workflow, use `node --test test/api.test.ts test/auth-hardening.test.ts test/codex-adapter.test.ts test/agent-run-trace.test.ts test/model-output-gates.test.ts`. Record the commands and results in the milestone PR.
 
+#### Select a model provider for jobs
+
+Operators can configure the instance default and workflow overrides in **Pipeline → Model provider**. Claude is the initial default. A model-backed job records its selection as it starts, and changes to settings apply to later jobs. Jev keeps its existing routing. A job that selects Codex for a workflow awaiting Codex support fails with a visible job error.
+
 ### Sync
 
 `autocraft sync` (every minute) runs one org-wide GitHub search for items updated since the newest `updatedAt` stored (`org_high_water`) minus 10 minutes, up to the run's start. The search returns at most 1,000 results, so a window with more matches is cut into `updated:A..B` slices, halving until each fits. A one-second slice with more than 1,000 matches is read by listing every tracked repo down to that second (with a logged warning); until the run finishes, neither `org_high_water` nor a repo's `high_water` moves. GitHub's search index can lag, so once an hour (`search_catchup_at`) the same search also re-reads the 6 hours before `org_high_water`, sliced the same way. `org_high_water` moves to the newest `updatedAt` seen, not to the start time. An item whose stored row equals what GitHub returned is not written again. Items of untracked repos are dropped before anything else is done with them. Per-repo passes run only for the first sync, for a repo that was just tracked (tracking clears its `high_water` and `synced_at`) and for `--per-repo`, `--all` and `--repo`.

@@ -76,6 +76,18 @@ The same control stores a separate Codex default model and workflow overrides. L
 
 Scheduled classification, referee, area assignment, priority, and duplicate checks support Codex. Jobs pin the configured Codex model at start and preserve Jev's first pass. The existing classifier tables retain their workflow roles. Job and agent history show the provider and model used for the call.
 
+#### Verify scheduled Codex text workflows
+
+Use a separate development database and the dedicated Codex home. Start `node src/cli.ts runner serve` without Claude accounts configured by unsetting `AUTOCRAFT_ACCOUNTS` and `AUTOCRAFT_ACCOUNTS_ROOT`. Only enable the pipeline for the controlled test repository. Keep write approvals off for the test repository.
+
+1. Connect Codex and load the model suggestions from **Pipeline → Model provider**. Keep Claude as the instance default and set Codex overrides for `classify-all`, `classify-new`, `prioritize`, and `dupes`.
+2. Poll the controlled repository with `node src/cli.ts sync --repo "$test_repo" --per-repo`. With Codex's model field blank, queue **Classification pass** with a new run ID. Add or update a fixture issue, poll again, and queue **Classify new and changed items**. Both jobs should show Codex calls with valid verdicts and establish or update the current classification run.
+3. Set the `prioritize` model override to one returned by the connected account and queue **Prioritize open items**. Confirm priorities were stored and the job and run history show the exact model ID.
+4. Queue **Find duplicates** with a controlled unchecked pair at the current item hashes. For a repeatable pair, use two unrelated fixture issues and prepare their nearest-neighbor input in the test database. Confirm the job records the pair as distinct and the Codex run refers to both items.
+5. Set the `prioritize` override to an intentionally unavailable model ID and rerun on a fixture without a current priority. The job and Codex run should both fail visibly and name the model. Clear the test override afterward.
+
+For the live fallback pass, disable Jev in the isolated test database so Codex gets the text calls. Run `node --test test/codex-text-workflows.test.ts` locally to verify that a confident Jev verdict stays with Jev and an uncertain one goes to Codex. Run `pnpm check`, build the dashboard, and include both live and local results in the milestone PR.
+
 ### Sync
 
 `autocraft sync` (every minute) runs one org-wide GitHub search for items updated since the newest `updatedAt` stored (`org_high_water`) minus 10 minutes, up to the run's start. The search returns at most 1,000 results, so a window with more matches is cut into `updated:A..B` slices, halving until each fits. A one-second slice with more than 1,000 matches is read by listing every tracked repo down to that second (with a logged warning); until the run finishes, neither `org_high_water` nor a repo's `high_water` moves. GitHub's search index can lag, so once an hour (`search_catchup_at`) the same search also re-reads the 6 hours before `org_high_water`, sliced the same way. `org_high_water` moves to the newest `updatedAt` seen, not to the start time. An item whose stored row equals what GitHub returned is not written again. Items of untracked repos are dropped before anything else is done with them. Per-repo passes run only for the first sync, for a repo that was just tracked (tracking clears its `high_water` and `synced_at`) and for `--per-repo`, `--all` and `--repo`.

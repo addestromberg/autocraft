@@ -6,7 +6,8 @@ import type { DatabaseSync } from "node:sqlite";
 import { queueRoom } from "./call.ts";
 import { jevAvailable } from "./jev.ts";
 import { jevParallel } from "./accounts.ts";
-import { add, askClaude, askJev, pool, saveUsage, type AskOptions, type LintedReply, type Usage } from "../classify/run.ts";
+import { add, askJev, pool, saveUsage, type AskOptions, type LintedReply, type Usage } from "../classify/run.ts";
+import { runClaude } from "./claude/adapter.ts";
 import { CLAUDE_PROMPTS, JEV_PROMPTS, JEV_USD_PER_INPUT_TOKEN, renderJev, type ClaudePromptId, type JevPromptId } from "../prompts/index.ts";
 import type { DupePair } from "../dupes/pair.ts";
 import type { Item } from "../classify/parse.ts";
@@ -155,12 +156,7 @@ export async function runModelStep<I, V, C = void>(db: DatabaseSync, step: Claud
 }
 
 async function call<I, V, C>(db: DatabaseSync, step: ClaudeStep<I, V, C> | JevStep<I, V, C>, input: I, opts: StepOpts<I, C>): Promise<Reply | null> {
-  if (step.provider === "claude") {
-    const lint = step.lint?.make(input, opts.ctx as C);
-    const { ctx: _c, usage: _u, cancelled: _x, ask, model: m, onAttempt: _a, onReply: _r, ...ask_ } = opts;
-    const model = m ?? step.model ?? CLAUDE_PROMPTS[step.id].models[0]!;
-    return ask ? ask(input, lint) : askClaude(step.id, model, (step.toPrompt ? step.toPrompt(input) : input) as never, db, { ...ask_, ...(lint && { lint }) });
-  }
+  if (step.provider === "claude") return runClaude({ db, step, input, opts });
   const { item, body } = step.request(input, opts.ctx as C);
   const p = await askJev(step.id, item as never, db, body ?? renderJev(step.id, item as Item | DupePair), opts.usage === undefined);
   type Json = { answers?: unknown; usage?: { input_tokens?: number; output_tokens?: number } };

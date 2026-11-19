@@ -203,6 +203,7 @@ VITE_MOCK=1 pnpm -C web build   # static mockup build, no server needed
 The mock API serves fixture data; pick the role with `?as=operator|maintainer|viewer`. See [web/README.md](web/README.md) and [docs/ui-design.md](docs/ui-design.md).
 
 For Codex adapter development in Incus, follow the [local verification and PR check runbook](docs/operations.md#codex-adapter-development-in-incus).
+The Codex adapter executes prompt-only calls with the connected Codex account. Existing workflows continue to use their configured providers.
 
 | Path | Contents |
 |---|---|

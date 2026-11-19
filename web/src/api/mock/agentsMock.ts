@@ -1,7 +1,7 @@
 // Agents, accounts and rates on fake data: three accounts (one disabled), twelve runs in flight and a few hundred finished ones.
 import { traceRunDetail } from "./traceMock";
 import type { Api } from "../client";
-import type { AgentRun, AgentRunDetail, ClaudeAccount, JevStatus, Rates, UsagePause, User } from "../types";
+import type { AgentRun, AgentRunDetail, ClaudeAccount, CodexAccount, JevStatus, Rates, UsagePause, User } from "../types";
 import { NOW, REPOS } from "./fixtures";
 
 const wait = <T>(v: T, ms = 60) => new Promise<T>((r) => setTimeout(() => r(structuredClone(v)), ms));
@@ -118,8 +118,12 @@ export function createAgentsMock(me: User, changed: () => void): Pick<Api, "acco
   let pause: UsagePause = { fiveHour: 80, weekly: 80 };
   let jev: JevStatus = { enabled: true, unavailable: null };
   const visible = () => accounts.filter((a) => me.role === "operator" || a.enabled);
+  let codex: CodexAccount = { state: "disconnected" };
   return {
     accounts: {
+      codex: () => wait(codex),
+      codexLogin: () => wait(codex = { state: "waiting", url: "https://auth.openai.com/codex/device", code: "DEMO-CODE" }),
+      codexDisconnect: () => wait(codex = { state: "disconnected" }),
       list: () => wait(visible()),
       pause: () => wait({ ...pause }),
       jev: () => wait({ ...jev }),

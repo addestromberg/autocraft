@@ -1649,6 +1649,10 @@ export type AccountUsage = {
   weeklyPct: number | null; weeklyResetsAt: string | null;
   readAt: string | null;                                          // when the reading was taken
 };
+export type CodexAccount =
+  | { state: "waiting"; url: string; code: string }
+  | { state: "unconfigured" | "disconnected" | "connected" | "starting" | "disconnecting" | "busy" | "failed" };
+
 export type ClaudeAccount = {
   id: string;            // short key from the box config, e.g. "b"; never an email or path
   label: string;         // set by an operator; the only name the UI shows

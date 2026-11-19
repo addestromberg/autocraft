@@ -183,16 +183,55 @@ function AddForm({ onAdded }: { onAdded: () => void }) {
   );
 }
 
+function CodexAccountBlock() {
+  const api = useApi();
+  const write = useWrite();
+  const q = useQuery("codex-account", (x) => x.accounts.codex(), {
+    pollMs: (d) => d?.state === "starting" || d?.state === "waiting" || d?.state === "disconnecting" || d?.state === "busy" ? 2000 : false,
+  });
+  const state = q.data?.state;
+  const status = state ? {
+    unconfigured: "Set AUTOCRAFT_CODEX_HOME to connect an account.",
+    disconnected: "Disconnected",
+    connected: "Connected",
+    starting: "Starting sign-in…",
+    disconnecting: "Disconnecting…",
+    waiting: "Waiting for browser sign-in",
+    busy: "Another operator is signing in",
+    failed: "Sign-in failed. Try again.",
+  }[state] : "Checking connection…";
+  const act = (action: "connect" | "disconnect") => void write.run(action, () =>
+    action === "connect" ? api.accounts.codexLogin() : api.accounts.codexDisconnect()).then(() => q.refetch());
+  return (
+    <Block title="Codex account">
+      <p className="text-sm" role="status">{status}</p>
+      {q.data?.state === "waiting" && (
+        <p className="mt-2 text-sm">
+          Open the <a className="text-accent underline" href={safeHref(q.data.url)} target="_blank" rel="noreferrer noopener">Codex device sign-in page</a> and enter <strong className="font-mono">{q.data.code}</strong>.
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(state === "disconnected" || state === "failed") && <Button size="sm" variant="primary" loading={write.busy === "connect"} onClick={() => act("connect")}>Connect Codex</Button>}
+        {state === "connected" && <ConfirmButton label="Disconnect" confirmLabel="Confirm disconnect" loading={write.busy === "disconnect"} onConfirm={() => act("disconnect")} />}
+        {(state === "starting" || state === "waiting") && <Button size="sm" variant="ghost" loading={write.busy === "disconnect"} onClick={() => act("disconnect")}>Cancel sign-in</Button>}
+        <Button size="sm" variant="ghost" onClick={() => q.refetch()}>Check connection</Button>
+      </div>
+      <ErrorLine error={write.error ?? q.error?.message} />
+    </Block>
+  );
+}
+
 export function AccountsView() {
   const q = useList();
   const operator = useUser().role === "operator";
   return (
-    <Page title="Accounts" sub="Claude accounts for agent runs">
+    <Page title="Accounts" sub="Accounts for agent runs">
       <div className="mt-4 space-y-4">
         <Block title="Pauses and Jev">
           <PauseLevels operator={operator} />
           <JevLine operator={operator} />
         </Block>
+        {operator && <CodexAccountBlock />}
         <Block title="Claude accounts">
           <ErrorLine error={q.error?.message} />
           {operator && <AddForm onAdded={q.refetch} />}

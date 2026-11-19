@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
-import type { Decision, DecisionComment, DecisionList, Item, Progress, SearchHit, User } from "../web/src/api/types.ts";
+import type { CodexAccount, Decision, DecisionComment, DecisionList, Item, Progress, SearchHit, User } from "../web/src/api/types.ts";
 import { addLogin } from "../src/access.ts";
 import { connect } from "../src/db.ts";
 import { laneForDecision } from "../src/github/user-lane.ts";
@@ -121,6 +121,60 @@ const auditCount = (action: string, login: string) =>
   (db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action = ? AND login = ?").get(action, login) as { n: number }).n;
 
 describe("api", () => {
+  test("Codex credentials stay server-side throughout operator device sign-in", async (t) => {
+    const codexHome = join(dir, "codex-home");
+    const cli = join(dir, "fake-codex");
+    writeFileSync(cli, `#!/bin/sh
+shift 2
+case "$*" in
+  "login status") test -f "$CODEX_HOME/auth.json" && exit 0; echo "Not logged in" >&2; exit 1 ;;
+  "login --device-auth")
+    printf '\\033[94mhttps://auth.openai.com/codex/device\\033[0m\\nEnter this one-time code\\n \\033[94mTEST-CODE\\033[0m\\n'
+    while [ ! -f "$CODEX_HOME/approved" ]; do sleep 0.05; done
+    (umask 077; printf "%s" 'credential-must-stay-private' > "$CODEX_HOME/auth.json") ;;
+  logout) rm -f "$CODEX_HOME/auth.json" ;;
+  *) exit 9 ;;
+esac
+`, { mode: 0o700 });
+    const oldHome = process.env.AUTOCRAFT_CODEX_HOME;
+    const oldBin = process.env.AUTOCRAFT_CODEX_BIN;
+    process.env.AUTOCRAFT_CODEX_HOME = codexHome;
+    process.env.AUTOCRAFT_CODEX_BIN = cli;
+    t.after(() => {
+      if (oldHome === undefined) delete process.env.AUTOCRAFT_CODEX_HOME;
+      else process.env.AUTOCRAFT_CODEX_HOME = oldHome;
+      if (oldBin === undefined) delete process.env.AUTOCRAFT_CODEX_BIN;
+      else process.env.AUTOCRAFT_CODEX_BIN = oldBin;
+    });
+    const boss = await signedIn("boss");
+    const viewer = await signedIn("viewer1");
+    const path = "/api/accounts/codex";
+    assert.equal((await viewer.req("GET", path)).status, 403);
+    assert.equal((await viewer.req("POST", path + "/login")).status, 403);
+    assert.deepEqual(await boss.get(path), { state: "disconnected" });
+    assert.deepEqual(await boss.post(path + "/login"), { state: "starting" });
+    await assert.rejects(() => boss.post(path + "/login"), /409/);
+    async function waitFor(state: CodexAccount["state"]): Promise<CodexAccount> {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const result = await boss.get<CodexAccount>(path);
+        if (result.state === state) return result;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.fail(`Codex did not reach ${state}`);
+    }
+    try {
+      assert.deepEqual(await waitFor("waiting"), { state: "waiting", url: "https://auth.openai.com/codex/device", code: "TEST-CODE" });
+      writeFileSync(join(codexHome, "approved"), "");
+      assert.deepEqual(await waitFor("connected"), { state: "connected" });
+    } finally {
+      assert.deepEqual(await boss.post(path + "/disconnect"), { state: "disconnected" });
+    }
+    assert.deepEqual(await boss.get(path), { state: "disconnected" });
+    const events = db.prepare("SELECT action, details FROM audit WHERE target = 'codex' ORDER BY rowid").all();
+    assert.deepEqual(events.map(({ action }) => action), ["account-login-start", "account-sign-out"]);
+    assert.doesNotMatch(JSON.stringify(events), /TEST-CODE|credential-must-stay-private/);
+  });
+
   test("without a session every endpoint answers 401 JSON", async () => {
     const c = new Client();
     const r = await c.req("GET", "/api/me");

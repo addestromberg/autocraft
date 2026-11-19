@@ -313,7 +313,7 @@ export function claudeCwd(): string {
  * `session`: a sandboxed call keeps its session store and reports it in `session.kept` (the caller removes it). With `session.resume` the call continues that session with the message on its account, or returns undefined from `askOnce` when it cannot.
  * `lint`: checks the parsed reply (src/replylint.ts). With problems, and for a sandboxed call of a prompt that registers `lint`, one follow-up message goes to the same session and its reply is linted too.
  */
-export type AskOptions = { check?: CheckTool; lint?: Lint; onProgress?: (line: string) => void; checkout?: string; reference?: string; maxWaitMs?: number; shared?: { name: string; dir: string }[]; session?: SessionAsk; itemTools?: { mounts: { host: string; path: string }[]; mcpServers: Record<string, unknown> } | null };
+export type AskOptions = { images?: string[]; check?: CheckTool; lint?: Lint; onProgress?: (line: string) => void; checkout?: string; reference?: string; maxWaitMs?: number; shared?: { name: string; dir: string }[]; session?: SessionAsk; itemTools?: { mounts: { host: string; path: string }[]; mcpServers: Record<string, unknown> } | null };
 
 /** The repo-docs directory for the item's repository, or undefined (no docs, or a checkout that is not one of ours). */
 export async function docsOf(db: DatabaseSync, checkout: string): Promise<string | undefined> {

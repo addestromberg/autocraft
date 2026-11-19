@@ -30,8 +30,8 @@ import type { CompareParsed, ScreenshotParsed } from "./plan.ts";
 import type { VerifyCandidate } from "./candidates.ts";
 import type { VerifyDeps } from "./index.ts";
 import { SCREENSHOT_STEP, cloneTask, queueScreenshotTasks } from "./tasks.ts";
-import { currentModelProvider } from "../agents/call.ts";
-import type { ScreenshotCompareInput, ScreenshotPlanInput, ShotStep } from "./types.ts";
+import { currentModelProvider, recordedModel } from "../agents/call.ts";
+import { MAX_SHOTS, type ScreenshotCompareInput, type ScreenshotPlanInput, type ShotStep } from "./types.ts";
 import type { CollectDeps } from "./results.ts";
 
 /** Characters of diff the screenshot planner is shown. */
@@ -169,10 +169,13 @@ export function screenshotsDue(db: DatabaseSync): boolean {
 }
 
 /** The default comparison: Opus reads the image pairs from `dir`, mounted as the call's read-only checkout (a plain directory works: nothing of the sandbox needs a repository). */
-async function compareWithModel(db: DatabaseSync, input: ScreenshotCompareInput, ctx: { ref: string; dir: string }, runId: string, n: number): Promise<CompareParsed | null> {
-  if (currentModelProvider() === "codex") throw new Error("Codex screenshot comparison is unavailable");
+async function compareWithModel(db: DatabaseSync, input: ScreenshotCompareInput, ctx: { ref: string; dir: string }, runId: string, n: number, repo: string): Promise<CompareParsed | null> {
+  const codex = currentModelProvider() === "codex";
+  if (codex && getConfig(db, repo)?.codex_compare !== true) throw new Error("Codex screenshot uploads are disabled for this repository");
+  if (codex && input.shots.length > MAX_SHOTS) throw new Error("Too many screenshot pairs for Codex comparison");
+  const images = codex ? input.shots.flatMap(({ before, after }) => [join(ctx.dir, before), join(ctx.dir, after)]) : undefined;
   const r = await runModelStep(db, VERIFY_COMPARE, { ...input, repo_dir: REPO_PATH }, {
-    checkout: ctx.dir, ctx: { ref: ctx.ref },
+    ...(codex ? { images } : { checkout: ctx.dir }), ctx: { ref: ctx.ref },
     usage: { run: runId, agent: `screenshot-compare-${n}`, stage: "verify", items: (ok: boolean) => (ok ? 1 : 0) },
   });
   return r.ok ? r.value : null;
@@ -287,7 +290,7 @@ async function collectOne(db: DatabaseSync, r: Run, deps: Pick<CollectDeps, "scr
   try {
     mkdirSync(join(dir, "before")); mkdirSync(join(dir, "after"));
     for (const p of pairs) { copyFileSync(p.b!, join(dir, "before", p.name)); copyFileSync(p.a!, join(dir, "after", p.name)); }
-    parsed = await (deps.screenshots?.compare ?? ((i, x) => compareWithModel(db, i, x, runId, r.number)))(input, { ref, dir });
+    parsed = await (deps.screenshots?.compare ?? ((i, x) => compareWithModel(db, i, x, runId, r.number, r.repo)))(input, { ref, dir });
   } catch (e) {
     return fail(`the comparison failed: ${(e as Error).message}`);
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -295,7 +298,7 @@ async function collectOne(db: DatabaseSync, r: Run, deps: Pick<CollectDeps, "scr
   if (!parsed.ok) return fail(`invalid comparison: ${parsed.error}`);
   const { verdict, clear } = parsed.result;
   const summary = scrub(parsed.result.summary);
-  const model = CLAUDE_PROMPTS["verify.compare"].models[0];
+  const model = recordedModel(CLAUDE_PROMPTS["verify.compare"].models[0]!);
   if (!finish("compared", { verdict, clear, comparison: summary, model })) return false;
 
   if (verdict === "regression" && clear) {

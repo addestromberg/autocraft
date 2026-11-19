@@ -1820,7 +1820,7 @@ export type BuildFeatureInput = { feature: BuildFeatureName; on?: boolean; repo?
 export type ScreenshotParam = { enum: string[] } | { int: [number, number] } | { chars: string; min: number; max: number };
 export type ScreenshotCommand = { doc: string; params: Record<string, ScreenshotParam>; argv?: string[]; line?: Record<string, string | number | boolean>; capture?: boolean };
 /** The operator-edited setup of one repo; also the body of PUT /api/build/screenshots/:repo. */
-export type ScreenshotConfigJson = { package: string; example: string; driver: "args" | "jsonl"; commands: Record<string, ScreenshotCommand>; ui_paths: string[]; size?: string };
+export type ScreenshotConfigJson = { package: string; example: string; driver: "args" | "jsonl"; commands: Record<string, ScreenshotCommand>; ui_paths: string[]; size?: string; codex_compare?: boolean };
 export type ScreenshotSetup = { repo: string; config: ScreenshotConfigJson; updatedBy: string; updatedAt: string };
 export type ScreenshotSetups = { setups: ScreenshotSetup[] };
 // ---- Nightly page (/api/nightly) ---------------------------------------------

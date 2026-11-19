@@ -207,6 +207,7 @@ Use `classify --classifier codex` to classify one mirrored issue with the connec
 See [Codex parity](docs/codex-parity.md) for the workflow inventory and acceptance criteria.
 Operators can select Codex on the Pipeline page for scheduled classification, priority, and duplicate checks.
 Codex model settings are separate from Claude's and can use the connected account's default.
+Repository-aware Codex tools use the scoped checkout and item reader described in the [Incus operations guide](docs/operations.md#scoped-codex-checkout-access).
 
 | Path | Contents |
 |---|---|

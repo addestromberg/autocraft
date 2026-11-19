@@ -25,6 +25,7 @@ export type ScreenshotConfigBody = {
   commands: Record<string, CommandSpec>;
   ui_paths: string[];
   size?: string;
+  codex_compare?: boolean;
 };
 export type ScreenshotConfig = ScreenshotConfigBody & { repo: string; updatedBy: string; updatedAt: string };
 
@@ -177,7 +178,7 @@ export function parseScreenshotConfig(raw: unknown): { ok: true; value: Screensh
     }
   }
   if (!isObj(v)) return { error: "the config must be a JSON object" };
-  const k = extraKeys(v, ["package", "example", "driver", "commands", "ui_paths", "size"], "config");
+  const k = extraKeys(v, ["package", "example", "driver", "commands", "ui_paths", "size", "codex_compare"], "config");
   if (k) return { error: k };
   if (typeof v.package !== "string" || !IDENT_RE.test(v.package)) return { error: `package must match ${IDENT_RE}` };
   if (typeof v.example !== "string" || !IDENT_RE.test(v.example)) return { error: `example must match ${IDENT_RE}` };
@@ -198,6 +199,10 @@ export function parseScreenshotConfig(raw: unknown): { ok: true; value: Screensh
     if (!str(p, 120) || !GLOB_RE.test(p) || p.startsWith("/") || p.split("/").includes("..")) return { error: `ui_paths: "${String(p)}" is not a relative glob of letters, digits and _ . * ? / -` };
   }
   const value: ScreenshotConfigBody = { package: v.package, example: v.example, driver: v.driver, commands: v.commands as Record<string, CommandSpec>, ui_paths: g as string[] };
+  if (v.codex_compare !== undefined) {
+    if (typeof v.codex_compare !== "boolean") return { error: "codex_compare must be a boolean" };
+    value.codex_compare = v.codex_compare;
+  }
   if (v.size !== undefined) value.size = v.size as string;
   return { ok: true, value };
 }
@@ -212,10 +217,10 @@ export function paramValueError(spec: ParamSpec, value: unknown): string | null 
   return charsPattern(spec).test(value) ? null : `must be ${spec.min} to ${spec.max} characters of ${spec.chars}`;
 }
 
-type Row = { repo: string; package: string; example: string; driver: string; commands: string; ui_paths: string; size: string | null; updated_by: string; updated_at: string };
+type Row = { repo: string; package: string; example: string; driver: string; commands: string; ui_paths: string; size: string | null; codex_compare: number; updated_by: string; updated_at: string };
 
 function fromRow(r: Row): ScreenshotConfig | null {
-  const p = parseScreenshotConfig({ package: r.package, example: r.example, driver: r.driver, commands: safeJson(r.commands), ui_paths: safeJson(r.ui_paths), ...(r.size ? { size: r.size } : {}) });
+  const p = parseScreenshotConfig({ package: r.package, example: r.example, driver: r.driver, commands: safeJson(r.commands), ui_paths: safeJson(r.ui_paths), codex_compare: r.codex_compare === 1, ...(r.size ? { size: r.size } : {}) });
   return "ok" in p ? { ...p.value, repo: r.repo, updatedBy: r.updated_by, updatedAt: r.updated_at } : null;
 }
 
@@ -243,11 +248,11 @@ export function putConfig(db: DatabaseSync, by: string, repo: string, raw: unkno
   if ("error" in p) throw new ScreenshotConfigError(p.error);
   const v = p.value;
   const at = new Date().toISOString();
-  db.prepare(`INSERT INTO screenshot_config (repo, package, example, driver, commands, ui_paths, size, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  db.prepare(`INSERT INTO screenshot_config (repo, package, example, driver, commands, ui_paths, size, codex_compare, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(repo) DO UPDATE SET package = excluded.package, example = excluded.example, driver = excluded.driver, commands = excluded.commands,
-      ui_paths = excluded.ui_paths, size = excluded.size, updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
-    .run(repo, v.package, v.example, v.driver, JSON.stringify(v.commands), JSON.stringify(v.ui_paths), v.size ?? null, by, at);
-  audit(db, by, "screenshot-config", repo, { package: v.package, example: v.example, driver: v.driver, commands: Object.keys(v.commands) });
+      ui_paths = excluded.ui_paths, size = excluded.size, codex_compare = excluded.codex_compare, updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
+    .run(repo, v.package, v.example, v.driver, JSON.stringify(v.commands), JSON.stringify(v.ui_paths), v.size ?? null, v.codex_compare === true ? 1 : 0, by, at);
+  audit(db, by, "screenshot-config", repo, { package: v.package, example: v.example, driver: v.driver, commands: Object.keys(v.commands), codex_compare: v.codex_compare === true });
   return { ...v, repo, updatedBy: by, updatedAt: at };
 }
 

@@ -58,3 +58,18 @@ test("put, get and delete are audited; a bad config is not stored; arguments are
   assert.notEqual(paramValueError({ chars: "a-z", min: 1, max: 3 }, "abcd"), null);
   assert.notEqual(paramValueError({ int: [1, 3] }, 4), null);
 });
+
+test("Codex screenshot upload permission is per repo and defaults off", () => {
+  const db = fresh();
+  try {
+    putConfig(db, "op", "app", { ...good(), codex_compare: true });
+    putConfig(db, "op", "other", good());
+    assert.equal(getConfig(db, "app")?.codex_compare, true);
+    assert.equal(getConfig(db, "other")?.codex_compare, false);
+    assert.throws(() => putConfig(db, "op", "app", { ...good(), codex_compare: "yes" }), ScreenshotConfigError);
+    putConfig(db, "op", "app", good());
+    assert.equal(getConfig(db, "app")?.codex_compare, false);
+  } finally {
+    db.close();
+  }
+});

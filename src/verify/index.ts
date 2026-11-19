@@ -10,7 +10,7 @@
 // verification, sets the state, summary and finished_at, writes the failure summary and cancels the
 // queued tasks of a verification whose PR head moved on (state `stale`).
 import { leaseItem } from "../runner/leases.ts";
-import { queueRoom } from "../agents/call.ts";
+import { queueRoom, recordedModel, withWorkflowProvider } from "../agents/call.ts";
 import { POOL_MAX, pool } from "../classify/run.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { BuildError } from "../build/envs.ts";
@@ -186,21 +186,21 @@ export async function runVerify(db: DatabaseSync, params: VerifyParams, log: (li
       handle();
       if (!result.ok) {
         log(`  ${ref}: invalid plan: ${result.error}`);
-        saveVerification(db, c, { ...errorRow(result.error), model: deps.model });
+        saveVerification(db, c, { ...errorRow(result.error), model: recordedModel(deps.model) });
         summary.errors++;
         return;
       }
       const plan = result.plan;
       summary.kinds[plan.kind] = (summary.kinds[plan.kind] ?? 0) + 1;
       if (plan.kind === "ci-enough") {
-        saveVerification(db, c, { kind: plan.kind, reason: plan.reason, plan: null, model: deps.model, headTask: null, baseTask: null, baseSha: base, state: "ci-enough", summary: plan.reason });
+        saveVerification(db, c, { kind: plan.kind, reason: plan.reason, plan: null, model: recordedModel(deps.model), headTask: null, baseTask: null, baseSha: base, state: "ci-enough", summary: plan.reason });
         return;
       }
       try {
         const ids = queueTasks(db, plan, { repo, number: c.number, head: c.head_oid, base });
         summary.tasks.push(...ids);
         queued = true;
-        saveVerification(db, c, { kind: plan.kind, reason: plan.reason, plan: storedPlan(plan), model: deps.model, headTask: ids[0] ?? null, baseTask: ids[1] ?? null, baseSha: base, state: "planned", summary: plan.reason });
+        saveVerification(db, c, { kind: plan.kind, reason: plan.reason, plan: storedPlan(plan), model: recordedModel(deps.model), headTask: ids[0] ?? null, baseTask: ids[1] ?? null, baseSha: base, state: "planned", summary: plan.reason });
       } catch (e) {
         if (!(e instanceof BuildError)) throw e;
         log(`  ${ref}: tasks not queued: ${e.message}`);
@@ -247,17 +247,20 @@ export const commands = {
     async run(args: string[]): Promise<void> {
       if (args.some((a) => a !== "--dry-run")) throw new Error("options: --dry-run");
       const { runCollect } = await import("./results.ts");
-      await runCollect(connect(), { dryRun: args.length > 0 });
+      const db = connect();
+      await withWorkflowProvider(db, "verify-collect", () => runCollect(db, { dryRun: args.length > 0 }));
     },
   },
   verify: {
     summary: "verify --repo R [--limit N] [--dry-run]: plan the verification of taken PRs and queue build tasks",
     async run(args: string[]): Promise<void> {
       const f = parseArgs(args);
-      if (typeof f.repo !== "string") throw new Error("missing --repo");
+      const repo = f.repo;
+      if (typeof repo !== "string") throw new Error("missing --repo");
       const limit = typeof f.limit === "string" ? Number(f.limit) : undefined;
       if (limit !== undefined && !(Number.isInteger(limit) && limit > 0)) throw new Error("--limit is a positive whole number");
-      await runVerify(connect(), { repo: f.repo, limit, dryRun: f["dry-run"] === true });
+      const db = connect();
+      await withWorkflowProvider(db, "verify", () => runVerify(db, { repo, limit, dryRun: f["dry-run"] === true }));
     },
   },
 };

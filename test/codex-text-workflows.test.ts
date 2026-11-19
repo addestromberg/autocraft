@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { setCallContext } from "../src/agents/call.ts";
+import { currentCodexModel, currentModelProvider, setCallContext, withWorkflowProvider } from "../src/agents/call.ts";
+import { setProviderSettings } from "../src/agents/provider.ts";
+import { setCodexModelSettings } from "../src/agents/codex/models.ts";
 import { setJevEnabled } from "../src/agents/jev.ts";
 import { listRuns } from "../src/agents/runs.ts";
 import { runModelStep, runTiered } from "../src/agents/step.ts";
@@ -81,6 +83,26 @@ console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:6,cached_i
     }
   } finally {
     setCallContext(null);
+    db.close();
+  }
+});
+
+test("manual workflows pin provider and model independently across simultaneous calls", async () => {
+  const db = connect(join(SCRATCH, "manual.db"));
+  try {
+    setProviderSettings(db, { defaultProvider: "claude", workflows: { conversation: "codex" } });
+    setCodexModelSettings(db, { defaultModel: "first-model", workflows: {} });
+    const conversation = withWorkflowProvider(db, "conversation", async () => {
+      await Promise.resolve();
+      return [currentModelProvider(), currentCodexModel()];
+    });
+    setCodexModelSettings(db, { defaultModel: "later-model", workflows: {} });
+    const proposal = withWorkflowProvider(db, "areas-propose", async () => {
+      await Promise.resolve();
+      return [currentModelProvider(), currentCodexModel()];
+    });
+    assert.deepEqual(await Promise.all([conversation, proposal]), [["codex", "first-model"], ["claude", undefined]]);
+  } finally {
     db.close();
   }
 });

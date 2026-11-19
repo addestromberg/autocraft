@@ -1,6 +1,7 @@
 // CLI: `autocraft areas list|propose|accept|edit|rescan|suggest --repo R`. Runs the steps in this process,
 // like the other stage commands; the dashboard queues the same steps as jobs.
 import { connect } from "../db.ts";
+import { withWorkflowProvider } from "../agents/call.ts";
 import { assignAreas } from "./assign.ts";
 import { proposeAreas, suggestAreas } from "./propose.ts";
 import { acceptProposal, areaCounts, currentList, decideSuggestion, editAreas, proposalsOf, unassignedCount, type AreaEdit } from "./store.ts";
@@ -59,12 +60,12 @@ export const commands = {
         }
         case "propose": {
           const { baseCheckout } = await import("../dupes/compare.ts");
-          const id = await proposeAreas(db, repo, { by: BY, checkout: (r) => baseCheckout(db, r), usageRun, log: console.log });
+          const id = await withWorkflowProvider(db, "areas-propose", () => proposeAreas(db, repo, { by: BY, checkout: (r) => baseCheckout(db, r), usageRun, log: console.log }));
           console.log(id === null ? "no usable proposal" : `proposal ${id} stored; accept it with: areas accept --repo ${repo} --id ${id}`);
           break;
         }
         case "suggest": {
-          const id = await suggestAreas(db, repo, { by: BY, usageRun, log: console.log });
+          const id = await withWorkflowProvider(db, "areas-suggest", () => suggestAreas(db, repo, { by: BY, usageRun, log: console.log }));
           console.log(id === null ? "no new area suggested" : `suggestion ${id} stored; accept areas with: areas accept --repo ${repo} --id ${id} --names "A,B"`);
           break;
         }
@@ -84,7 +85,7 @@ export const commands = {
           break;
         }
         case "rescan": {
-          const r = await assignAreas(db, { repo, limit: Number(flag(args, "--limit") ?? 5000), rescan: true, usageRun, progress: (l) => console.log(l), log: console.log });
+          const r = await withWorkflowProvider(db, "areas-rescan", () => assignAreas(db, { repo, limit: Number(flag(args, "--limit") ?? 5000), rescan: true, usageRun, progress: (l) => console.log(l), log: console.log }));
           console.log(`${r.due} items asked: Jev settled ${r.jev}, Haiku ${r.haiku}, ${r.none} fit none, ${r.left} unanswered`);
           break;
         }

@@ -2,7 +2,9 @@
 // one Sonnet call that suggests new areas from a sample of the items without an area. Both only store a
 // proposal; the operator accepts it (store.ts).
 import type { DatabaseSync } from "node:sqlite";
-import { add, askClaude, saveUsage, type Usage } from "../classify/run.ts";
+import { add, saveUsage, type Usage } from "../classify/run.ts";
+import { askTextModel } from "../agents/text-call.ts";
+import { recordedModel } from "../agents/call.ts";
 import { notOwnIntegrationSql } from "../dupes/held.ts";
 import { CLAUDE_PROMPTS } from "../prompts/index.ts";
 import { REPO_PATH } from "../sandbox/command.ts";
@@ -35,12 +37,12 @@ export async function proposeAreas(db: DatabaseSync, repo: string, p: ProposePar
   let usage = zero();
   let areas = null;
   for (let attempt = 0; attempt < PROPOSE.limits.attempts && !areas; attempt++) {
-    const reply = await askClaude("areas.propose", model, [input], db, { checkout: checkout ?? undefined });
+    const reply = await askTextModel("areas.propose", model, [input], db, { checkout: checkout ?? undefined });
     if (!reply) continue;
     usage = add(usage, reply.usage);
     areas = parseProposal(reply.text);
   }
-  saveUsage(db, p.usageRun, `areas-propose-${repo}`, "areas", model, areas ? 1 : 0, usage, start, now());
+  saveUsage(db, p.usageRun, `areas-propose-${repo}`, "areas", recordedModel(model), areas ? 1 : 0, usage, start, now());
   if (!areas) {
     p.log?.(`areas: no usable list for ${repo}`);
     return null;
@@ -61,12 +63,12 @@ export async function suggestAreas(db: DatabaseSync, repo: string, p: Omit<Propo
   let usage = zero();
   let areas = null;
   for (let attempt = 0; attempt < SUGGEST.limits.attempts && !areas; attempt++) {
-    const reply = await askClaude("areas.suggest", model, [{ ref: repo, repo, areas: list.areas, items }], db);
+    const reply = await askTextModel("areas.suggest", model, [{ ref: repo, repo, areas: list.areas, items }], db);
     if (!reply) continue;
     usage = add(usage, reply.usage);
     areas = parseSuggestion(reply.text, list.areas);
   }
-  saveUsage(db, p.usageRun, `areas-suggest-${repo}`, "areas", model, areas ? 1 : 0, usage, start, now());
+  saveUsage(db, p.usageRun, `areas-suggest-${repo}`, "areas", recordedModel(model), areas ? 1 : 0, usage, start, now());
   if (!areas?.length) {
     p.log?.(`areas: no new area suggested for ${repo}`);
     return null;

@@ -1,4 +1,5 @@
 // autocraft classify | classify current | classify-sample | classify-referee | classify-compare
+import { withWorkflowProvider } from "../agents/call.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -112,7 +113,7 @@ async function referee(args: string[]): Promise<void> {
   const db = connect();
   const pairs = pairsOf(db, runId, f.reference, f["pr-repo"] ?? "photocraft");
   const picked = pickDisagreements(pairs, Number(f.count ?? 30), seed);
-  await runReferee(db, runId, picked);
+  await withWorkflowProvider(db, "referee", () => runReferee(db, runId, picked));
   markSpotCheck(db, runId, pairs, Number(f["spot-check"] ?? 10), seed);
   console.log(`refereed ${picked.length} of ${pairs.filter((p) => p.jev.type_label !== p.haiku.type_label).length} disagreements`);
 }

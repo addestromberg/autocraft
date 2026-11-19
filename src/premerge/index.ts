@@ -1,5 +1,6 @@
 // CLI of the pre-merge review: `autocraft premerge --repo R [--number N] [--apply]`. Without --apply it lists the
 // candidates (PRs waiting in the merge queue for the review) and calls nothing. Operator only: the box's shell is the operator's.
+import { withWorkflowProvider } from "../agents/call.ts";
 import { audit } from "../dash/audit.ts";
 
 const USAGE = "premerge --repo R [--number N] [--apply]";
@@ -29,7 +30,8 @@ export const commands = {
       // A job reviewing the same heads at once would count two tries for one failure.
       if (o.apply && db.prepare("SELECT 1 FROM jobs WHERE step = 'premerge' AND state = 'running' AND repo = ?").get(o.repo)) throw new Error(`a premerge job is running for ${o.repo}; try again when it has finished`);
       if (o.apply) audit(db, "cli", "premerge-review", o.number ? `${o.repo}#${o.number}` : o.repo, {});
-      const s = await runPremerge(db, { repo: o.repo, number: o.number, dryRun: !o.apply });
+      const review = () => runPremerge(db, { repo: o.repo, number: o.number, dryRun: !o.apply });
+      const s = await (o.apply ? withWorkflowProvider(db, "premerge", review) : review());
       if (!o.apply) for (const c of s.candidates) console.log(`  ${c}`);
     },
   },

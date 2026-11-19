@@ -4,6 +4,7 @@
 // runDecide() is the step the runner registers; `autocraft decide` runs it
 // from a shell. Idempotent: items with a decision or a later stage are
 // skipped, so a re-run or an interrupted run asks only what is still missing.
+import { withWorkflowProvider } from "../agents/call.ts";
 import { jobItem } from "../runner/job-items.ts";
 import type { DatabaseSync } from "node:sqlite";
 import type { Item } from "../classify/parse.ts";
@@ -154,7 +155,10 @@ export const commands = {
   decide: {
     summary: `decide [--repo R ...] [--limit N] [--run ID] [--dry-run]: ask scope decisions and prepare every open decision`,
     async run(args: string[]): Promise<void> {
-      const r = await runDecide(connect(), parseArgs(args), (l) => console.error(l));
+      const db = connect();
+      const params = parseArgs(args);
+      const decide = () => runDecide(db, params, (l) => console.error(l));
+      const r = await (params.dryRun ? decide() : withWorkflowProvider(db, "decide", decide));
       console.log(table(r));
     },
   },

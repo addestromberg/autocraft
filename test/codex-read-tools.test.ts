@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { codexReadTools } from "../src/agents/codex/read-tools.ts";
-import { runCodexRead } from "../src/agents/codex/read-run.ts";
+import { openCodexReadSession, runCodexRead } from "../src/agents/codex/read-run.ts";
+import { recordCodexCheckoutTurn } from "../src/agents/codex/checkout-turn.ts";
 import { connect } from "../src/db.ts";
 import { writeSnapshot } from "../src/itemtools/snapshot.ts";
 import { SCRATCH } from "./scratch.ts";
@@ -69,4 +70,71 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   process.env.AUTOCRAFT_CODEX_BIN = cli;
   await assert.rejects(runCodexRead({ prompt: "Read a checkout", scope: { checkout: join(SCRATCH, "checkout") } }),
     /outside scoped checkout access/);
+});
+
+test("checkout turns share a pinned thread, record progress, refuse follow-up tools, and cancel", async () => {
+  const cli = join(SCRATCH, "codex-session");
+  const pidFile = join(SCRATCH, "session-pid");
+  writeFileSync(cli, `#!/usr/bin/node
+const { createInterface } = require("node:readline");
+const { writeFileSync } = require("node:fs");
+if (process.argv.slice(-2).join(" ") === "login status") process.exit(0);
+writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+const output = (message) => console.log(JSON.stringify(message));
+const threadId = "fixture-thread";
+let count = 0;
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") output({ id: message.id, result: {} });
+  if (message.method === "thread/start") {
+    if (message.params.model !== "fixture-model") process.exit(1);
+    output({ id: message.id, result: { thread: { id: threadId } } });
+  }
+  if (message.method === "turn/start") {
+    if (message.params.threadId !== threadId) process.exit(1);
+    count++;
+    const turnId = "turn-" + count;
+    output({ id: message.id, result: { turn: { id: turnId } } });
+    if (count < 3) output({ id: 100, method: "item/tool/call", params: { threadId, turnId, tool: "read_checkout_file", arguments: { path: "README.md" } } });
+  }
+  if (message.id === 100) {
+    const turnId = "turn-" + count;
+    if (message.result.success !== (count === 1)) process.exit(1);
+    output({ method: "item/agentMessage/delta", params: { threadId, turnId, delta: "text" } });
+    output({ method: "item/completed", params: { threadId, turnId, item: { type: "agentMessage", text: count === 1 ? "first" : "follow-up" } } });
+    output({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });
+  }
+});
+`, { mode: 0o700 });
+  process.env.AUTOCRAFT_CODEX_HOME = join(SCRATCH, "codex-home");
+  process.env.AUTOCRAFT_CODEX_BIN = cli;
+  const signal = new AbortController();
+  const db = connect(join(SCRATCH, "session-runs.db"));
+  const session = await openCodexReadSession({ model: "fixture-model", signal: signal.signal, scope: { checkout: join(SCRATCH, "checkout") } });
+  const seen: string[] = [];
+  const input = {
+    promptId: "decide.prepare" as const, prompt: "First turn", items: [],
+    onProgress(line: string) {
+      const row = db.prepare("SELECT progress FROM agent_runs WHERE state = 'running'").get();
+      if (row?.progress === line) seen.push(line);
+    },
+  };
+  try {
+    assert.deepEqual(await recordCodexCheckoutTurn(db, session, input), { text: "first" });
+    assert.deepEqual(seen, ["Starting Codex turn", "Reading scoped context", "Writing reply"]);
+    seen.length = 0;
+    assert.deepEqual(await recordCodexCheckoutTurn(db, session, { ...input, prompt: "Follow up", followUp: true }), { text: "follow-up" });
+    assert.deepEqual(seen, ["Starting Codex turn", "Writing reply"]);
+    const pending = recordCodexCheckoutTurn(db, session, { ...input, prompt: "Cancel this turn" });
+    signal.abort();
+    await assert.rejects(pending, /cancelled/);
+    const states = db.prepare("SELECT provider, model, state FROM agent_runs ORDER BY id").all();
+    assert.deepEqual(states.map((row) => [row.provider, row.model, row.state]), [
+      ["codex", "fixture-model", "done"], ["codex", "fixture-model", "done"], ["codex", "fixture-model", "failed"],
+    ]);
+    assert.throws(() => process.kill(Number(readFileSync(pidFile, "utf8")), 0), { code: "ESRCH" });
+  } finally {
+    await session.close();
+    db.close();
+  }
 });

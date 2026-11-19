@@ -5,7 +5,7 @@
 // core) stored as the decision's current version; a group decision gets a summary and a pick only. Our code accepts only a
 // pick that is one of the decision's cores or options.
 import type { DatabaseSync } from "node:sqlite";
-import { queueRoom } from "../agents/call.ts";
+import { currentCodexModel, currentModelProvider, queueRoom } from "../agents/call.ts";
 import { runModelStep, type ClaudeStep } from "../agents/step.ts";
 import { referenceProblems, defaultSemanticDeps, type SemanticDeps } from "../reference-lint.ts";
 import { dropTexts } from "../replylint.ts";
@@ -165,6 +165,7 @@ export type PrepareParams = {
   diff: DiffSource;
   usageRun: string;
   onSent?: () => void;
+  onProgress?: (line: string) => void;
   cancelled?: () => boolean;
   log: (line: string) => void;
   /** The semantic reference check of drafted comments; absent: the real one. */
@@ -187,6 +188,7 @@ function liveState(it: ItemRow, c: { head_oid: string | null; overall: string | 
 /** One call per decision id, concurrently as the Claude room allows. */
 export async function prepare(db: DatabaseSync, ids: string[], p: PrepareParams): Promise<PrepareResult> {
   const model = p.model ?? judgementModel(db);
+  const by = currentModelProvider() === "codex" ? currentCodexModel() ?? "codex" : model;
   const checkouts = new Map<string, Promise<string | null>>();
   const select = db.prepare("SELECT * FROM decisions WHERE id = ? AND answer IS NULL");
   const itemOf = db.prepare("SELECT kind, state, mergeable, head_oid, additions, deletions, changed_files FROM items WHERE repo = ? AND number = ?");
@@ -227,6 +229,7 @@ export async function prepare(db: DatabaseSync, ids: string[], p: PrepareParams)
     const ckey = `${repo}#${isPr ? n : 0}@${head ?? ""}`;
     if (!checkouts.has(ckey)) checkouts.set(ckey, p.checkout(repo, n, head).catch(() => null));
     const checkout = await checkouts.get(ckey)!;
+    if (!checkout && currentModelProvider() === "codex") p.log(`decide: ${id}: checkout unavailable; asking without tools`);
     // The conversation (item block, updates) is brought up to date before the call: the drafts are stamped with what the call was told.
     if (single) {
       await ensureConversation(db, repo, n, "opus", { diff: p.diff }).catch((e) => p.log(`decide: no conversation for ${id}: ${(e as Error).message}`));
@@ -250,6 +253,7 @@ export async function prepare(db: DatabaseSync, ids: string[], p: PrepareParams)
     db.prepare("INSERT INTO main.decision_prepares (decision_id, at, manual) VALUES (?, ?, ?)").run(d.id, now(), d.prepare_requested_at ? 1 : 0);
     const r = await runModelStep(db, PREPARE, input, {
       model, checkout: checkout ?? undefined, reference: checkout ? dir : undefined,
+      onProgress: currentModelProvider() === "codex" ? p.onProgress : undefined,
       ctx: { db, subject: { repo, n, d, single }, dir, semantic },
       usage: { run: p.usageRun, agent: `prepare-${String(k).padStart(3, "0")}`, stage: "decide", model, items: () => 1 },
       onReply: (reply) => { if (reply.fixTurn) p.log(`decide: ${id}: reply lint: ${reply.problems?.length ? `${reply.problems.length} problems left after the fix turn` : "fixed by one fix turn"}`); },
@@ -277,9 +281,9 @@ export async function prepare(db: DatabaseSync, ids: string[], p: PrepareParams)
     try {
       if (single) {
         const cards = got.ask ? [got.ask] : [];
-        insertTurn(db, repo, n, { kind: "opus", login: "opus", body: got.text, block: opusBlock(got.text, cards, got.choices), notes: got.notes, cards, ...(got.choices && { choices: { decision: d, parsed: got.choices, source: "prepare" as const, by: model } }) }, { diff: p.diff });
+        insertTurn(db, repo, n, { kind: "opus", login: currentModelProvider() === "codex" ? "codex" : "opus", body: got.text, block: opusBlock(got.text, cards, got.choices), notes: got.notes, cards, ...(got.choices && { choices: { decision: d, parsed: got.choices, source: "prepare" as const, by } }) }, { diff: p.diff });
       }
-      store.run(got.pick, got.pick ? got.reason || null : null, model, got.summary, model, at, at, head, readKey, d.id, d.question, d.options);
+      store.run(got.pick, got.pick ? got.reason || null : null, by, got.summary, by, at, at, head, readKey, d.id, d.question, d.options);
       res.stored++;
     } catch (e) {
       p.log(`decide: could not store the prepare of ${d.id}: ${(e as Error).message}`);

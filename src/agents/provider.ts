@@ -2,9 +2,9 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ModelProvider, ModelProviderSettings } from "../../web/src/api/types.ts";
 
 const key = "model_provider_settings";
-const codexTextWorkflows = new Set(["classify-new", "classify-all", "prioritize", "dupes", "referee", "areas-rescan"]);
+const codexWorkflows = new Set(["classify-new", "classify-all", "prioritize", "dupes", "referee", "areas-rescan", "decide"]);
 
-export const supportsCodexWorkflow = (name: string): boolean => codexTextWorkflows.has(name);
+export const supportsCodexWorkflow = (name: string): boolean => codexWorkflows.has(name);
 
 export function isModelProvider(value: unknown): value is ModelProvider {
   return value === "claude" || value === "codex";

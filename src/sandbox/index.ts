@@ -11,6 +11,7 @@ import { buildCheckout, checkoutRoot, pruneCheckouts } from "./checkout.ts";
 export { REPO_PATH, REPOS_ROOT, AGENTS_PATH, reposPath, sandboxCommand, type SandboxSpec } from "./command.ts";
 import { envVar } from "../env.ts";
 import { ownerOf } from "../owners.ts";
+import { currentModelProvider } from "../agents/call.ts";
 
 const MAX_AGE_MS = 24 * 3600_000;
 
@@ -67,7 +68,8 @@ export async function checkoutForCommit(repo: string, branch: string, sha: strin
 }
 
 async function checkoutOf(repo: string, sha: string, label: string, log: (line: string) => void, fetch: (g: Git) => Promise<string | null>): Promise<string | null> {
-  if (!sandboxAvailable() || !SHARED_NAME.test(repo)) return null;
+  const enabled = currentModelProvider() === "codex" ? envVar("NO_SANDBOX") !== "1" : sandboxAvailable();
+  if (!enabled || !SHARED_NAME.test(repo)) return null;
   try {
     const dest = join(checkoutRoot(), repo, sha);
     pruneCheckouts(checkoutRoot(), MAX_AGE_MS);

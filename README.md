@@ -213,6 +213,7 @@ The **Ask decisions** workflow can use Codex to prepare recommendations for oper
 Codex can also review PR heads and merge commits and perform read-only defensive review.
 Conversation replies, area proposals, and duplicate comparisons support Codex provider overrides.
 Discord drafts, search, signal checks, and reference lint can use Codex for their text judgments.
+Standalone review, decision, and referee commands honor the configured workflow provider and Codex model.
 
 | Path | Contents |
 |---|---|

@@ -1,6 +1,7 @@
 // CLI of the post-merge review stage: `autocraft postmerge review <repo>#<n> [--again]`,
 // `autocraft postmerge file <repo>#<n> <finding>` and `autocraft postmerge backfill --since <ISO date> [--yes]`.
 // Operator only: the box's shell is the operator's.
+import { withWorkflowProvider } from "../agents/call.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { audit } from "../dash/audit.ts";
 import { mergedPr } from "./select.ts";
@@ -19,7 +20,7 @@ export async function reviewOne(db: DatabaseSync, ref: string, again: boolean, l
   if (db.prepare("SELECT 1 FROM jobs WHERE step = 'postmerge' AND state = 'running' AND repo = ?").get(repo)) throw new Error(`a postmerge job is running for ${repo}; try again when it has finished`);
   audit(db, ACTOR, "postmerge-review", ref, { again });
   const { runPostmerge } = await import("./review.ts");
-  await runPostmerge(db, { repo, only: [number] }, log);
+  await withWorkflowProvider(db, "postmerge", () => runPostmerge(db, { repo, only: [number] }, log));
 }
 
 export const commands = {

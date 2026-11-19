@@ -143,6 +143,8 @@ Schema: `src/schema.sql`. Full-text search uses the FTS5 tables `items_fts` and 
 
 TypeScript on Node 24, run directly (type stripping, no build step): `node src/cli.ts <command>`. SQLite through the built-in `node:sqlite`. `pnpm check` type-checks; `pnpm test` runs the tests.
 
+Standalone post-merge review, targeted pre-merge review, decision preparation, and referee classification use the corresponding Pipeline provider and Codex model settings. Dry runs keep their existing behavior.
+
 #### Verify repository-aware Codex workflows in Incus
 
 Connect Codex through the development dashboard and point `AUTOCRAFT_CODEX_HOME` at its dedicated home. Use a development environment with no Claude accounts. The live checks create temporary synthetic repository and database fixtures and use the active Codex subscription.

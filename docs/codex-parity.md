@@ -36,3 +36,14 @@ The [prompt registry](../src/prompts/index.ts) defines prompt IDs, model default
 | Account status, authentication probe, and usage queries | Use provider-specific operations. Keep login checks and usage reporting separate from operator model choices. |
 
 Accept explicit model IDs. Surface available models when the connected runtime can report them. If a configured model fails because account access differs, record the workflow and model in the error and keep the selected provider. During M5, account allocation can use model availability where it is reliable.
+
+## Read-only GitHub pilot
+
+The final Incus pilot used a temporary private GitHub repository with synthetic Rust code, one issue, and one PR. The GitHub issue and PR supplied the inputs, and AutoCraft built separate read-only checkouts at the issue’s base commit and the PR’s head.
+
+- Codex classified the issue as a bug fix and returned a valid pre-merge review for the pinned PR head.
+- Codex prepared an issue patch and regression test locally. The existing patch validator and `git apply --check` both passed.
+- Agent history recorded the three Codex calls. A second read from GitHub verified that the issue and PR state, comments, reviews, and head remained the same.
+- The temporary repository and local checkout were removed after verification.
+
+This pilot exercised GitHub input and repository-aware reasoning with controlled data. Results on an active project and live Claude execution are still unverified.

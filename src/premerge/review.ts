@@ -2,7 +2,7 @@
 // without a person, and lists defects and minor findings. One call per PR head. Reads GitHub (the diff); writes only to
 // the local database. What the findings do to the PR is the merge queue (src/merge/queue.ts) and the fix-up route.
 import type { DatabaseSync } from "node:sqlite";
-import { queueRoom } from "../agents/call.ts";
+import { currentModelProvider, queueRoom, recordedModel } from "../agents/call.ts";
 import { pool } from "../classify/run.ts";
 import { runModelStep } from "../agents/step.ts";
 import { PREMERGE_OPUS } from "../agents/steps.ts";
@@ -36,6 +36,7 @@ export type PremergeParams = {
   number?: number;
   dryRun?: boolean;
   onHandled?: (n: number) => void;
+  onProgress?: (line: string) => void;
 };
 export type PremergeDeps = Pick<OpusDeps, "fetchDiff" | "model" | "maxChars" | "checkout" | "semantic"> & { now?: () => number };
 export type PremergeSummary = { runId: string; repo: string; candidates: string[]; reviewed: number; findings: number; defects: number; failed: string[]; moved: string[] };
@@ -93,7 +94,7 @@ export async function runPremerge(db: DatabaseSync, params: PremergeParams, log:
     const start = now(), ref = refOf(e), head = e.head;
     const fail = (error: string, final = false) => {
       jobItem(db, repo, e.number, error, log);
-      savePremerge(db, { repo, number: e.number, head, at: now(), runId, model: deps.model, error, final });
+      savePremerge(db, { repo, number: e.number, head, at: now(), runId, model: recordedModel(deps.model), error, final });
       s.failed.push(ref);
     };
     // A diff that waits for what the merge rule reads beside it is read again, with no model call, within the hour's re-reads
@@ -129,6 +130,7 @@ export async function runPremerge(db: DatabaseSync, params: PremergeParams, log:
       const semantic: SemanticDeps | undefined = dir ? deps.semantic ?? defaultSemanticDeps(db, ref) : undefined;
       const r = await runModelStep(db, PREMERGE_OPUS, input, {
         model: deps.model, checkout, reference: checkout ? dir : undefined, ctx: { dir, semantic },
+        onProgress: currentModelProvider() === "codex" ? params.onProgress : undefined,
         usage: { run: runId, agent: `premerge-${ref.replace("#", "-")}`, stage: "premerge", items: (ok) => (ok ? 1 : 0) },
         onReply: (reply) => { if (reply.fixTurn) log(`  ${ref}: reply lint: ${reply.problems?.length ? `${reply.problems.length} problems left after the fix turn` : "fixed by one fix turn"}`); },
       });
@@ -138,7 +140,7 @@ export async function runPremerge(db: DatabaseSync, params: PremergeParams, log:
         jobItem(db, repo, e.number, "the head moved during the review; not stored", log);
         s.moved.push(ref);
       } else if (got) {
-        savePremerge(db, { repo, number: e.number, head, at: now(), runId, model: deps.model, findings: got.findings, searched: got.searched, conflicts: got.conflicts, unsure: got.unsure, claims: got.claims, baseRef: p.baseRef });
+        savePremerge(db, { repo, number: e.number, head, at: now(), runId, model: recordedModel(deps.model), findings: got.findings, searched: got.searched, conflicts: got.conflicts, unsure: got.unsure, claims: got.claims, baseRef: p.baseRef });
         jobItem(db, repo, e.number, `pre-merge review: ${got.findings.length} findings`, log);
         s.reviewed++; s.findings += got.findings.length; s.defects += got.findings.filter((f) => f.severity === "defect").length;
       } else fail("retry: no valid reply from the model");

@@ -670,7 +670,7 @@ export const STEPS: StepDef[] = [
     ],
     run: async (ctx) => {
       const { runOpusReview } = await import("../review/opus.ts");
-      const r = await runOpusReview(ctx.db, { repo: String(ctx.params.repo), limit: Number(ctx.params.limit), onHandled: ctx.handled }, ctx.log);
+      const r = await runOpusReview(ctx.db, { repo: String(ctx.params.repo), limit: Number(ctx.params.limit), onHandled: ctx.handled, onProgress: ctx.progress }, ctx.log);
       ctx.usageRun(r.runId);
       const v = Object.entries(r.verdicts).map(([k, n]) => `${n} ${k}`).join(", ");
       return `${r.repo}: reviewed ${r.reviewed} of ${r.candidates} candidates${v ? ` (${v})` : ""}; ${r.skipped.length} without a diff, ${r.missing.length} without an answer`;
@@ -722,7 +722,7 @@ export const STEPS: StepDef[] = [
     ],
     run: async (ctx) => {
       const { runPremerge } = await import("../premerge/review.ts");
-      const r = await runPremerge(ctx.db, { repo: String(ctx.params.repo), limit: Number(ctx.params.limit), onHandled: ctx.handled }, ctx.log);
+      const r = await runPremerge(ctx.db, { repo: String(ctx.params.repo), limit: Number(ctx.params.limit), onHandled: ctx.handled, onProgress: ctx.progress }, ctx.log);
       ctx.usageRun(r.runId);
       return `${r.repo}: reviewed ${r.reviewed} of ${r.candidates.length} candidates; ${r.findings} findings (${r.defects} defects), ${r.failed.length} without an answer, ${r.moved.length} moved`;
     },
@@ -740,7 +740,7 @@ export const STEPS: StepDef[] = [
     ],
     run: async (ctx) => {
       const { runPostmerge } = await import("../postmerge/review.ts");
-      const r = await runPostmerge(ctx.db, { repo: String(ctx.params.repo), limit: Number(ctx.params.limit), onHandled: ctx.handled }, ctx.log);
+      const r = await runPostmerge(ctx.db, { repo: String(ctx.params.repo), limit: Number(ctx.params.limit), onHandled: ctx.handled, onProgress: ctx.progress }, ctx.log);
       ctx.usageRun(r.runId);
       return `${r.repo}: reviewed ${r.reviewed} of ${r.candidates} candidates; ${r.findings} findings (${r.defects} defects), ${r.failed.length} without an answer`;
     },

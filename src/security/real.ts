@@ -2,6 +2,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import { ownerOf } from "../owners.ts";
 import { askClaude, saveUsage, type Usage } from "../classify/run.ts";
+import { askTextModel } from "../agents/text-call.ts";
+import { currentModelProvider, recordedModel } from "../agents/call.ts";
 import { exec, fixupDir, Git } from "../fixup/git.ts";
 import { checkoutForCommit, sandboxAvailable } from "../sandbox/index.ts";
 import { REPO_PATH } from "../sandbox/command.ts";
@@ -12,6 +14,7 @@ import type { ScanDeps } from "./scan.ts";
 export const usageRunId = (scanId: number): string => `security-${scanId}`;
 
 export function realDeps(db: DatabaseSync, scanId: number, io: { cancelled: () => boolean; log: (line: string) => void; progress: (line: string) => void }): ScanDeps {
+  const codex = currentModelProvider() === "codex";
   let dir = "";
   let seq = 0;
   // The checkout is read-only in bubblewrap; the CLI keeps its API access, the model gets Read, Grep and Glob and no web tool.
@@ -21,7 +24,8 @@ export function realDeps(db: DatabaseSync, scanId: number, io: { cancelled: () =
     const start = new Date().toISOString();
     let text: string | null = null, usage: Usage | null = null;
     try {
-      const r = await askClaude(id, "opus", [{ ...input, repo_dir: REPO_PATH }] as never, db, { checkout: dir });
+      const run = codex ? askTextModel : askClaude;
+      const r = await run(id, "opus", [{ ...input, repo_dir: REPO_PATH }] as never, db, { checkout: dir, onProgress: codex ? io.progress : undefined });
       if (r) { text = r.text; usage = r.usage; }
     } catch (e) {
       io.log(`${id} failed: ${(e as Error).message}`.slice(0, 300));
@@ -29,7 +33,7 @@ export function realDeps(db: DatabaseSync, scanId: number, io: { cancelled: () =
     const spent = (db.prepare(`SELECT SUM(r.cost_usd) AS c FROM agent_runs r JOIN agent_run_items i ON i.run_id = r.id WHERE i.repo = ? AND i.number = ? AND r.id > ?`)
       .get(input.repo, input.number, before) as { c: number | null }).c;
     const cost = spent ?? usage?.cost ?? null;
-    saveUsage(db, usageRunId(scanId), `${id}#${++seq}`, "security", "opus", 1, usage ? { ...usage, cost } : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost }, start, new Date().toISOString());
+    saveUsage(db, usageRunId(scanId), `${id}#${++seq}`, "security", recordedModel("opus"), 1, usage ? { ...usage, cost } : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost }, start, new Date().toISOString());
     const runId = (db.prepare(`SELECT MIN(r.id) AS id FROM agent_runs r JOIN agent_run_items i ON i.run_id = r.id WHERE i.repo = ? AND i.number = ? AND r.id > ?`)
       .get(input.repo, input.number, before) as { id: number | null }).id;
     return { text, cost, runId };
@@ -37,7 +41,7 @@ export function realDeps(db: DatabaseSync, scanId: number, io: { cancelled: () =
   return {
     ...io,
     checkout: async (repo, pin) => {
-      if (!sandboxAvailable()) {
+      if (!codex && !sandboxAvailable()) {
         io.log("the sandbox is not available on this machine");
         return null;
       }
@@ -50,7 +54,7 @@ export function realDeps(db: DatabaseSync, scanId: number, io: { cancelled: () =
     },
     ask: send as ScanDeps["ask"],
     // Used only while the scan-tests switch is on (the scan checks it).
-    writeTest: (input) => send("security.scantest", input),
+    ...(!codex && { writeTest: (input) => send("security.scantest", input) }),
     crates: (repo, sha) => cachedCrates(repo, sha, ghCrates),
   };
 }

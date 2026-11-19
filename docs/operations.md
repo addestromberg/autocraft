@@ -48,6 +48,26 @@ The Codex adapter uses the connected account for prompt-only execution in an emp
 
 To classify one mirrored issue, put its `repo#number` reference on one line in a file and run `node src/cli.ts classify --classifier codex --run-id codex-dev --items /path/to/issue.txt` with the same `AUTOCRAFT_DB` and `AUTOCRAFT_CODEX_HOME` as the dashboard. The command prints the agent run ID. In **Agent runs**, open that run to inspect its Codex verdict or failure. Codex verdicts are stored separately from pipeline classifications.
 
+#### Verify the full Codex workflow
+
+Use a controlled issue in a private test repository whose bare name is unique across owners. A fork that shares its repository name with an upstream repo known to AutoCraft cannot be tracked alongside it. Use the same development database and Codex home as the dashboard throughout the run.
+
+```sh
+export AUTOCRAFT_DB="$dev_state/mirror.db"
+export AUTOCRAFT_CODEX_HOME="$dev_state/codex"
+test_slug=YOUR_OWNER/YOUR_UNIQUE_TEST_REPO
+issue_number=1
+test_repo="${test_slug##*/}"
+node src/cli.ts repos track "$test_slug"
+node src/cli.ts sync --repo "$test_repo" --per-repo
+printf '%s#%s\n' "$test_repo" "$issue_number" > "$dev_state/issue.txt"
+node src/cli.ts classify --classifier codex --run-id codex-acceptance --items "$dev_state/issue.txt"
+```
+
+Start the dashboard, connect Codex, and restart the dashboard before classification. The account should still show **Connected**. After classification, the CLI prints an agent run ID. That run should show provider **Codex**, state **Done**, and the validated issue type in its summary. Review the local dashboard logs for errors. Disconnect Codex, then repeat the command with a different run ID to verify it exits nonzero and records a failed Codex run with a sign-in message.
+
+Run `pnpm check`, the dashboard build, and the relevant tests locally. For the v1 workflow, use `node --test test/api.test.ts test/auth-hardening.test.ts test/codex-adapter.test.ts test/agent-run-trace.test.ts test/model-output-gates.test.ts`. Record the commands and results in the milestone PR.
+
 ### Sync
 
 `autocraft sync` (every minute) runs one org-wide GitHub search for items updated since the newest `updatedAt` stored (`org_high_water`) minus 10 minutes, up to the run's start. The search returns at most 1,000 results, so a window with more matches is cut into `updated:A..B` slices, halving until each fits. A one-second slice with more than 1,000 matches is read by listing every tracked repo down to that second (with a logged warning); until the run finishes, neither `org_high_water` nor a repo's `high_water` moves. GitHub's search index can lag, so once an hour (`search_catchup_at`) the same search also re-reads the 6 hours before `org_high_water`, sliced the same way. `org_high_water` moves to the newest `updatedAt` seen, not to the start time. An item whose stored row equals what GitHub returned is not written again. Items of untracked repos are dropped before anything else is done with them. Per-repo passes run only for the first sync, for a repo that was just tracked (tracking clears its `high_water` and `synced_at`) and for `--per-repo`, `--all` and `--repo`.

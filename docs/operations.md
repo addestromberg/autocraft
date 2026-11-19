@@ -163,6 +163,16 @@ node scripts/verify-codex-upgrade.mjs /path/to/development.db
 
 The check compares the saved provider and model settings, runs live Codex classification as the default, then runs the same workflow with a simulated Claude response. It verifies the provider and result in run history and removes the temporary database.
 
+#### Rehearse a dashboard rollback in Incus
+
+Keep a checkout of the previous deployment with its built `web/dist`, and build the candidate dashboard. Pass the development database and previous checkout to the rollback script.
+
+```sh
+node scripts/verify-codex-rollback.mjs /path/to/development.db /path/to/previous-checkout
+```
+
+The script creates a SQLite backup from a read-only source. It starts the previous and candidate builds on disposable loopback listeners, verifies each frontend entry asset, writes a marker to the upgraded copy, and then restores the backup. It checks that the previous build starts again, the marker is gone, and the saved provider and model settings match.
+
 #### Run the Codex repair fixture in Incus
 
 With the development Codex account connected, set `AUTOCRAFT_CODEX_HOME` to its dedicated home and run the repair fixture as the rootless Podman worker user.

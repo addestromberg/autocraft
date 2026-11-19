@@ -5,6 +5,7 @@
 import { jobItem } from "../runner/job-items.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { freeSlots } from "../agents/accounts.ts";
+import { currentModelProvider } from "../agents/call.ts";
 import { jevAvailable } from "../agents/jev.ts";
 import { notOwnIntegrationSql } from "../dupes/held.ts";
 import { refOf } from "../classify/parse.ts";
@@ -97,7 +98,7 @@ async function assignRepo(db: DatabaseSync, repo: string, due: Due[], p: AssignP
   };
   for (let i = 0; i < due.length && !p.cancelled?.(); i += CHUNK) {
     // With neither model available there is nothing to ask, so no diff is fetched.
-    if (!jevAvailable(db) && freeSlots(db) <= 0 && !p.paths) { p.log?.(`areas: no model available for ${repo}`); break; }
+    if (!jevAvailable(db) && currentModelProvider() === "claude" && freeSlots(db) <= 0 && !p.paths) { p.log?.(`areas: no model available for ${repo}`); break; }
     const chunk = await withPaths(due.slice(i, i + CHUNK), p.paths ?? diffPaths(db));
     p.onSent?.(chunk.length);
     const t = await runTiered(db, AREAS, chunk, {

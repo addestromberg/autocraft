@@ -139,7 +139,7 @@ function Jobs({ selected }: { selected?: number }) {
                     {Object.keys(j.params).length > 0 && <span className="ml-1.5 text-xs text-ink/45">{paramText(j.params)}</span>}
                     {(j.modelProvider || j.models.length > 0 || j.accounts.length > 0) && (
                       <div className="text-xs text-ink/55">
-                        {j.modelProvider === "codex" ? "Codex" : j.models.join(", ")}
+                        {j.modelProvider === "codex" ? `Codex · ${j.models.join(", ")}` : j.models.join(", ")}
                         {j.accounts.length > 0 && <span className="ml-1.5">on {j.accounts.join(", ")}</span>}
                       </div>
                     )}

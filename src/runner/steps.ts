@@ -12,6 +12,7 @@ import { byOfJob } from "../core/gates.ts";
 import { featureOn } from "../build/features.ts";
 import { envVar } from "../env.ts";
 import { stageOfStep } from "../stages/registry.ts";
+import { textFallbackLabel } from "../agents/call.ts";
 
 type Base = { name: string; label: string; help?: string; required?: boolean };
 export type ParamDef =
@@ -454,7 +455,7 @@ export const STEPS: StepDef[] = [
     run: async (ctx) => {
       const { runPrioritize } = await import("../priority/index.ts");
       const r = await runPrioritize(ctx.db, { limit: Number(ctx.params.limit), onSent: ctx.handled, cancelled: ctx.cancelled, log: ctx.log });
-      return r.due ? `rated ${r.saved} of ${r.sent} items (${r.jev} by Jev, ${r.haiku} by Haiku), ${r.due - r.sent > 0 ? r.due - r.sent : 0} left; ${r.rescored} reach values changed` : `nothing new to rate; ${r.rescored} reach values changed`;
+      return r.due ? `rated ${r.saved} of ${r.sent} items (${r.jev} by Jev, ${r.haiku} by ${textFallbackLabel()}), ${r.due - r.sent > 0 ? r.due - r.sent : 0} left; ${r.rescored} reach values changed` : `nothing new to rate; ${r.rescored} reach values changed`;
     },
   },
   {

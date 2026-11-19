@@ -9,12 +9,15 @@ import { levelBand } from "../rank/level.ts";
 import type { ModelProvider } from "../../web/src/api/types.ts";
 
 /** Set by the job process: which job and step the calls belong to, and whether a cancel was asked. */
-export type CallContext = { jobId: number; step: string; stage: number; modelProvider?: ModelProvider; /** Queue class of the step (StepDef.priority). */ class?: 0 | 1 | 2; /** The job's repo param. */ repo?: string; cancelled(): boolean; /** True once the job is cancelled or the pipeline is switched off: no new model call starts. */ stopping?(): boolean };
+export type CallContext = { jobId: number; step: string; stage: number; modelProvider?: ModelProvider; codexModel?: string; /** Queue class of the step (StepDef.priority). */ class?: 0 | 1 | 2; /** The job's repo param. */ repo?: string; cancelled(): boolean; /** True once the job is cancelled or the pipeline is switched off: no new model call starts. */ stopping?(): boolean };
 let context: CallContext | null = null;
 export const setCallContext = (c: CallContext | null): void => void (context = c);
 /** The job this process runs, or null outside a job. */
 export const currentJobId = (): number | null => context?.jobId ?? null;
 export const currentModelProvider = (): ModelProvider => context?.modelProvider ?? "claude";
+export const currentCodexModel = (): string | undefined => context?.codexModel;
+export const textFallbackLabel = (): string => currentModelProvider() === "codex" ? "Codex" : "Haiku";
+export const modelCallStopping = (): boolean => context?.cancelled() === true || context?.stopping?.() === true;
 /** The job and step this process runs, or null outside a job. */
 export const currentJob = (): { id: number; step: string } | null => (context ? { id: context.jobId, step: context.step } : null);
 
@@ -87,6 +90,7 @@ function waiterOrder(db: DatabaseSync, nowMs: number): Waiter[] {
 
 /** How many more Claude calls a caller may start now: free slots, minus the fresh eligible waiters that rank ahead of a new waiter of the current call's class. */
 export function queueRoom(db: DatabaseSync, cls: 0 | 1 | 2 = currentClass()): number {
+  if (currentModelProvider() === "codex") return 0; // Each job's pool runs one Codex call at a time.
   const ahead = (db.prepare("SELECT COUNT(*) AS n FROM model_waits WHERE provider = 'claude' AND eligible = 1 AND seen_at >= ? AND class >= ?").get(Date.now() - allocation.staleMs, cls) as { n: number }).n;
   return Math.max(0, freeSlots(db) - Number(ahead));
 }

@@ -11,6 +11,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { refOf, type Item } from "../classify/parse.ts";
 import { freeSlots } from "../agents/accounts.ts";
+import { textFallbackLabel } from "../agents/call.ts";
 import { jevAvailable } from "../agents/jev.ts";
 import { runHaiku, runJev } from "../classify/run.ts";
 import { fillClassHashes } from "../itemhash.ts";
@@ -77,7 +78,7 @@ async function haikuPass(ctx: StepContext, run: string, todo: Item[], sent: (n: 
     sent(chunk.length);
     // The first call of the pass runs alone and writes the prompt cache; the rest read it.
     await runHaiku(db, run, chunk, undefined, undefined, { cold: i === 0 });
-    ctx.progress(`Haiku: ${Math.min(i + size, todo.length)} of ${todo.length} items`);
+    ctx.progress(`${textFallbackLabel()}: ${Math.min(i + size, todo.length)} of ${todo.length} items`);
   }
   return (count.get(run, t0) as { n: number }).n;
 }
@@ -132,10 +133,10 @@ async function pass(ctx: StepContext, run: string, mode: "new" | "all"): Promise
   // Items Jev did not answer because it is unavailable go to Haiku, which settles them.
   const alone = ctx.cancelled() || jevAvailable(ctx.db) ? [] : todo.filter((x) => !jevDone.has(refOf(x)));
   const haikuAlone = alone.length ? await haikuOnlyPass(ctx, run, alone, hashes, sent) : 0;
-  if (alone.length) ctx.log(`Jev unavailable: Haiku classified ${haikuAlone} of ${alone.length} items`);
+  if (alone.length) ctx.log(`Jev unavailable: ${textFallbackLabel()} classified ${haikuAlone} of ${alone.length} items`);
   const aloneRefs = new Set(alone.map(refOf));
   const unsure = ctx.cancelled() ? [] : haikuItems(ctx.db, run, limit).filter((x) => !aloneRefs.has(refOf(x)));
-  ctx.log(`Haiku: ${unsure.length} items where Jev is unsure of the type (under ${SURE * 100} %) or of a flag`);
+  ctx.log(`${textFallbackLabel()}: ${unsure.length} items where Jev is unsure of the type (under ${SURE * 100} %) or of a flag`);
   const haiku = await haikuPass(ctx, run, unsure, sent);
   const jev = jevDone.size;
   // Items of repos with an area list that were not asked against its current version; Jev's answers share the job's limit with the type pass.
@@ -143,16 +144,16 @@ async function pass(ctx: StepContext, run: string, mode: "new" | "all"): Promise
   return { areas, jev, due: due.length, haiku, haikuDue: unsure.length, haikuAlone, aloneDue: alone.length, left: due.length - jev - haikuAlone };
 }
 
-const areaNote = (r: { areas: AssignResult }): string => (r.areas.due ? ` Areas: ${r.areas.jev} by Jev, ${r.areas.haiku} by Haiku of ${r.areas.due} items asked.` : "");
+const areaNote = (r: { areas: AssignResult }): string => (r.areas.due ? ` Areas: ${r.areas.jev} by Jev, ${r.areas.haiku} by ${textFallbackLabel()} of ${r.areas.due} items asked.` : "");
 
-const aloneNote = (r: { haikuAlone: number; aloneDue: number }): string => (r.aloneDue ? `Jev unavailable: Haiku classified ${r.haikuAlone} items. ` : "");
+const aloneNote = (r: { haikuAlone: number; aloneDue: number }): string => (r.aloneDue ? `Jev unavailable: ${textFallbackLabel()} classified ${r.haikuAlone} items. ` : "");
 
 export async function classifyNew(ctx: StepContext): Promise<string> {
   const run = latestRun(ctx.db);
   if (!run) throw new Error("There is no classification run yet; start a classification pass first.");
   const r = await pass(ctx, run, "new");
   if (!r.due && !r.haikuDue && !r.areas.due) return `Nothing to classify in run ${run}.`;
-  return `Run ${run}: ${aloneNote(r)}Jev classified ${r.jev} of ${r.due} new or changed items${r.left ? ` (${r.left} left)` : ""}; Haiku gave a second opinion on ${r.haiku} of ${r.haikuDue}.${areaNote(r)}`;
+  return `Run ${run}: ${aloneNote(r)}Jev classified ${r.jev} of ${r.due} new or changed items${r.left ? ` (${r.left} left)` : ""}; ${textFallbackLabel()} gave a second opinion on ${r.haiku} of ${r.haikuDue}.${areaNote(r)}`;
 }
 
 export async function classifyAll(ctx: StepContext): Promise<string> {
@@ -160,5 +161,5 @@ export async function classifyAll(ctx: StepContext): Promise<string> {
   const r = await pass(ctx, run, "all");
   const complete = r.left === 0 && !ctx.cancelled();
   if (complete) ctx.db.prepare("INSERT INTO settings (key, value) VALUES ('classify_run', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(run);
-  return `Run ${run}: ${aloneNote(r)}Jev classified ${r.jev} of ${r.due} items without a verdict${r.left ? ` (${r.left} left; start it again to continue)` : ""}; Haiku gave a second opinion on ${r.haiku} of ${r.haikuDue}.${areaNote(r)}${complete ? " The run is now the current one." : ""}`;
+  return `Run ${run}: ${aloneNote(r)}Jev classified ${r.jev} of ${r.due} items without a verdict${r.left ? ` (${r.left} left; start it again to continue)` : ""}; ${textFallbackLabel()} gave a second opinion on ${r.haiku} of ${r.haikuDue}.${areaNote(r)}${complete ? " The run is now the current one." : ""}`;
 }

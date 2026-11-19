@@ -50,6 +50,7 @@ import { latestRun } from "../classify/settled.ts";
 import { PIPELINE_DRAIN } from "../core/rules.ts";
 import { DEADLINE_ERROR, enqueue, JobError, now, requestCancel, RUNNER_STOPPED } from "./jobs.ts";
 import { claudePauseReason } from "../agents/accounts.ts";
+import { selectProvider } from "../agents/provider.ts";
 import { tripReasonOfStep } from "../push-outcomes.ts";
 import { STEP_STAGE } from "../core/push-outcome.ts";
 import { jobBlock, stepParallel, type Active } from "./concurrency.ts";
@@ -726,7 +727,7 @@ export function pauseReason(db: DatabaseSync, step: string, ms: number = Date.no
   const b = o.backoff === false ? null : failureBackoff(db, step, ms);
   if (b !== null) return `failed ${b.failures} time${b.failures === 1 ? "" : "s"} in a row; retry at ${hhmm(b.until)}`;
   // Steps that call Claude (decide, opus-review, the Haiku part of classify-new) wait for an account with headroom.
-  if (usesClaude(modelsOf(knownStep(step), {}))) return claudePauseReason(db, ms);
+  if (usesClaude(modelsOf(knownStep(step), {})) && selectProvider(db, step) === "claude") return claudePauseReason(db, ms);
   return null;
 }
 

@@ -4,7 +4,8 @@ import type { DatabaseSync } from "node:sqlite";
 import { jevParallel } from "../agents/accounts.ts";
 import { queueRoom } from "../agents/call.ts";
 import { jevAvailable } from "../agents/jev.ts";
-import { askClaude, pool } from "../classify/run.ts";
+import { pool } from "../classify/run.ts";
+import { askTextModel } from "../agents/text-call.ts";
 import { runModelStep } from "../agents/step.ts";
 import { DUPES_HAIKU, DUPES_JEV } from "../agents/steps.ts";
 import { CLAUDE_PROMPTS } from "../prompts/index.ts";
@@ -52,7 +53,7 @@ export function defaultCheckDeps(db: DatabaseSync): CheckDeps {
       return r.ok ? r.value : null;
     },
     async haiku(pairs) {
-      return (await askClaude("dupes.haiku", HAIKU.models[0]!, pairs, db))?.text ?? null;
+      return (await askTextModel("dupes.haiku", HAIKU.models[0]!, pairs, db))?.text ?? null;
     },
     jevUsable: () => jevAvailable(db),
     now: () => new Date(),

@@ -8,7 +8,7 @@ import { scrub } from "../../runner/scrub.ts";
 import { jsonObject } from "../../security/rules.ts";
 import type { openCodexReadSession } from "./read-run.ts";
 
-type Session = Awaited<ReturnType<typeof openCodexReadSession>>;
+type Session = Pick<Awaited<ReturnType<typeof openCodexReadSession>>, "model" | "turn">;
 
 /** Records an initial or follow-up checkout turn in the existing run history and forwards job progress. */
 export async function recordCodexCheckoutTurn(db: DatabaseSync, session: Session, input: {

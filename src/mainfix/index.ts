@@ -81,7 +81,7 @@ export function defaultDeps(): MainFixDeps {
     gh: ghExec, exec, now: () => new Date(),
     fix: {
       root: fixupDir(),
-      ask: async (db, input, checkout, tool) => (await askTextModel("cifix.patch", PATCH.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout } : { checkout, check: tool }))?.text ?? null,
+      ask: async (db, input, checkout, tool, session) => (await askTextModel("cifix.patch", PATCH.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout, session } : { checkout, check: tool }))?.text ?? null,
       check: async (db, input, checkout) => (await askTextModel("fixup.check", CHECK.models[0]!, input, db, { checkout }))?.text ?? null,
       checkout: (repo, branch, sha) => checkoutForCommit(repo, branch, sha, console.log),
     },

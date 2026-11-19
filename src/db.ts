@@ -107,6 +107,7 @@ const ADDED_COLUMNS: [table: string, column: string, type: string][] = [
   ["build_tasks", "warm_role", "TEXT"],
   ["verifications", "note", "TEXT"],
   ["fix_attempts", "size", "TEXT"],
+  ["fix_attempts", "session", "TEXT"],
   // The formatter diff of the passing round, folded into the PR commit.
   ["fix_attempts", "format_diff", "TEXT"],
   ["repos", "reconciled_at", "TEXT"],

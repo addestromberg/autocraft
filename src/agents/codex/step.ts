@@ -1,6 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { docsOf, promptVersion, refsOf, type AskOptions, type LintedReply } from "../../classify/run.ts";
+import { join } from "node:path";
+import { codexCommand } from "./account.ts";
+import { sessionStore } from "../../sandbox/session-store.ts";
+import { touchStore } from "../../prepush/resume.ts";
 import { CLAUDE_PROMPTS, renderClaude, type ClaudeInput, type ClaudePromptId } from "../../prompts/index.ts";
 import { currentCodexModel, modelCallStopping, stepOf, StoppedError } from "../call.ts";
 import { finishRun, insertRun } from "../runs.ts";
@@ -21,11 +26,12 @@ const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null
 
 export async function runCodexStep<K extends ClaudePromptId>(id: K, input: ClaudeInput[K], db: DatabaseSync, opts: AskOptions): Promise<LintedReply> {
   const scoped = checkoutPrompts.has(id);
-  if ((!supported.has(id) && !scoped) || opts.check || opts.session || (!scoped && (opts.checkout || opts.lint))) {
+  const repair = id === "fixup.patch" || id === "fixup.conflict" || id === "fixissue.patch" || id === "cifix.patch";
+  if ((!supported.has(id) && !scoped) || opts.check || (!repair && opts.session) || (!scoped && (opts.checkout || opts.lint))) {
     throw new Error(`Codex is selected but does not yet support ${id}`);
   }
   if (modelCallStopping()) throw new StoppedError("the job is stopping");
-  if ((id.startsWith("security.") || id === "fixup.patch" || id === "fixup.conflict" || id === "fixissue.patch" || id === "cifix.patch") && !opts.checkout) throw new Error(`Codex requires a scoped checkout for ${id}`);
+  if ((id.startsWith("security.") || repair) && !opts.checkout) throw new Error(`Codex requires a scoped checkout for ${id}`);
   const model = currentCodexModel();
   const rendered = renderClaude(id, input);
   const prompt = id === "security.verify" ? rendered.replace(VERIFY_OPTIONAL_TEST, "Base the verification on static evidence and omit proposed_test.") : rendered;
@@ -64,14 +70,27 @@ async function checkoutReply(db: DatabaseSync, id: ClaudePromptId, prompt: strin
   checkout: string, opts: AskOptions, model: string | undefined, signal: AbortSignal): Promise<LintedReply> {
   const snapshot = snapshotFile();
   const access = CLAUDE_PROMPTS[id].sandbox;
-  const session = await openCodexReadSession({ model, signal, scope: {
-    checkout, reference: access?.reference ? opts.reference : undefined,
-    repoDocs: access?.docs ? await docsOf(db, checkout) : undefined,
-    ...(access?.workspace && opts.itemTools !== null && existsSync(snapshot) && { items: { snapshot, refs: items } }),
-  } });
+  const retained = opts.session;
+  const accountHome = retained ? codexCommand().options.cwd : undefined;
+  const auth = accountHome ? join(accountHome, "auth.json") : undefined;
+  const accountKey = auth && existsSync(auth) ? createHash("sha256").update(readFileSync(auth)).digest("hex") : undefined;
+  const prior = retained?.resume?.session;
+  const resume = prior && accountKey && prior.account === accountKey && prior.checkout === checkout && existsSync(prior.dir) ? prior : undefined;
+  const home = retained && accountKey ? resume?.dir ?? sessionStore() : undefined;
+  let session;
   try {
+    if (home && auth) symlinkSync(auth, join(home, "auth.json"));
+    if (home) touchStore(home);
+    session = await openCodexReadSession({ model: resume?.model ?? model, signal, retained: home ? { home, threadId: resume?.id } : undefined, scope: {
+      checkout, reference: access?.reference ? opts.reference : undefined,
+      repoDocs: access?.docs ? await docsOf(db, checkout) : undefined,
+      ...(access?.workspace && opts.itemTools !== null && existsSync(snapshot) && { items: { snapshot, refs: items } }),
+    } });
     const turn = { promptId: id, items, onProgress: opts.onProgress };
-    const reply = await recordCodexCheckoutTurn(db, session, { ...turn, prompt: `${prompt}\n\nUse the scoped file and item tools for available repository context. Report any claims you cannot verify from that context.` });
+    const reply = await recordCodexCheckoutTurn(db, session, { ...turn, prompt: resume ? retained!.resume!.message : `${prompt}\n\nUse the scoped file and item tools for available repository context. Report any claims you cannot verify from that context.` });
+    if (retained && home && accountKey) {
+      retained.kept = { id: session.threadId, dir: home, account: accountKey, checkout, model: session.model };
+    }
     const lint = opts.lint;
     const first = await lint?.(reply.text, "first");
     if (!lint || !first?.length) return { ...reply, usage: zeroUsage, ...(first && { problems: first }) };
@@ -89,6 +108,9 @@ async function checkoutReply(db: DatabaseSync, id: ClaudePromptId, prompt: strin
     }
     return { ...reply, usage: zeroUsage, problems: (await lint(reply.text, "fix")) ?? first, fixTurn: needsFixTurn(first) };
   } finally {
-    await session.close();
+    try { await session?.close(); } finally {
+      if (home) rmSync(join(home, "auth.json"), { force: true });
+      if (home && !retained?.kept && !resume) rmSync(home, { recursive: true, force: true });
+    }
   }
 }

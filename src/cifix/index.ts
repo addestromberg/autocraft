@@ -131,7 +131,7 @@ const codeNote: Note = { by: "model", kind: "comment", model: PROMPT.models[0] }
 export function defaultDeps(): CifixDeps {
   return {
     querier: new Client(1000), exec, fetchDiff: ghDiff, gh: ghExec, now: () => new Date(), root: fixupDir(),
-    ask: async (db, input, checkout, tool, session) => (await askTextModel("cifix.patch", PROMPT.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout } : { checkout, check: tool, session }))?.text ?? null,
+    ask: async (db, input, checkout, tool, session) => (await askTextModel("cifix.patch", PROMPT.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout, session } : { checkout, check: tool, session }))?.text ?? null,
     check: async (db, input, checkout) => (await askTextModel("fixup.check", CHECK.models[0]!, input, db, { checkout }))?.text ?? null,
     checkout: (r, n, h) => checkoutForPr(r, n, h, console.log),
   };

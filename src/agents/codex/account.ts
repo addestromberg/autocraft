@@ -20,7 +20,7 @@ let login: Login | undefined;
 let failedOwner: string | undefined;
 let signingOut = false;
 
-function command() {
+export function codexCommand() {
   const home = process.env.AUTOCRAFT_CODEX_HOME;
   if (!home || !isAbsolute(home)) throw new AccountError(503, "Set AUTOCRAFT_CODEX_HOME to a private absolute directory");
   try {
@@ -43,7 +43,7 @@ function command() {
 }
 
 function run(args: string[]): Promise<boolean> {
-  const { bin, options } = command();
+  const { bin, options } = codexCommand();
   return new Promise((resolve, reject) => {
     execFile(bin, [...commonArgs, ...args], { ...options, timeout: 5000, maxBuffer: 8192 }, (err, _stdout, stderr) => {
       if (!err) resolve(true);
@@ -70,7 +70,7 @@ export async function startLogin(owner: string): Promise<CodexAccount> {
   if (connected || login || signingOut) {
     throw new AccountError(409, "Codex is already connected or an account operation is in progress");
   }
-  const { bin, options } = command();
+  const { bin, options } = codexCommand();
   const child = spawn(bin, [...commonArgs, "login", "--device-auth"], { ...options, stdio: ["ignore", "pipe", "ignore"] });
   const state: Login = { owner, child, code: null, finished: Promise.resolve() };
   failedOwner = undefined;

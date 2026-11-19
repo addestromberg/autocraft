@@ -17,7 +17,10 @@ import { actionable, ask, getDecision } from "../decisions.ts";
 import { connect } from "../db.ts";
 import { exec, fixupDir, type Exec } from "../fixup/git.ts";
 import { createIssue, ghRerunMainFailed, IssueError, type Writer } from "../github/write.ts";
-import { askClaude, saveUsage, type Usage } from "../classify/run.ts";
+import { askTextModel } from "../agents/text-call.ts";
+import { currentModelProvider, recordedModel, withWorkflowProvider } from "../agents/call.ts";
+import { isQuiet } from "../security/quiet.ts";
+import { saveUsage, type Usage } from "../classify/run.ts";
 import { checkoutForCommit } from "../sandbox/index.ts";
 import { readFailure } from "../cifix/logs.ts";
 import { optionalChecks } from "../optional-checks.ts";
@@ -78,16 +81,16 @@ export function defaultDeps(): MainFixDeps {
     gh: ghExec, exec, now: () => new Date(),
     fix: {
       root: fixupDir(),
-      ask: async (db, input, checkout, tool) => (await askClaude("cifix.patch", PATCH.models[0]!, input, db, { checkout, check: tool }))?.text ?? null,
-      check: async (db, input, checkout) => (await askClaude("fixup.check", CHECK.models[0]!, input, db, { checkout }))?.text ?? null,
+      ask: async (db, input, checkout, tool) => (await askTextModel("cifix.patch", PATCH.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout } : { checkout, check: tool }))?.text ?? null,
+      check: async (db, input, checkout) => (await askTextModel("fixup.check", CHECK.models[0]!, input, db, { checkout }))?.text ?? null,
       checkout: (repo, branch, sha) => checkoutForCommit(repo, branch, sha, console.log),
     },
     classify: async (db, input) => {
       const model = PROMPT.models[0]!;
       const start = new Date().toISOString();
-      const reply = await askClaude("mainfix.classify", model, [input], db);
+      const reply = await askTextModel("mainfix.classify", model, [input], db);
       const usage = reply?.usage ?? ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null } as Usage);
-      saveUsage(db, `main-fix-${start.replace(/[-:]/g, "").slice(0, 15)}`, "main-fix", "main-fix", model, reply ? 1 : 0, usage, start, new Date().toISOString());
+      saveUsage(db, `main-fix-${start.replace(/[-:]/g, "").slice(0, 15)}`, "main-fix", "main-fix", recordedModel(model), reply ? 1 : 0, usage, start, new Date().toISOString());
       return reply ? parseVerdicts(reply.text, input.checks.map((c) => c.check)) : null;
     },
   };
@@ -192,6 +195,10 @@ function fromDecision(db: DatabaseSync, id: string): { state: string; issue: num
 }
 
 async function classifyHead(db: DatabaseSync, repo: string, cur: Current, deps: MainFixDeps, log: (l: string) => void, s: MainFixSummary, by: By = CLI_BY): Promise<boolean> {
+  if (currentModelProvider() === "codex" && cur.culpritPr !== null && isQuiet(db, repo, cur.culpritPr)) {
+    log(`  ${repo}: quiet PR excluded from Codex repair`);
+    return false;
+  }
   const at = deps.now().toISOString();
   const reading = await readFailure(deps.gh, repo, cur.headSha, optionalChecks(db, repo));
   const base = { repo, head_sha: cur.headSha, run_id: null, run_url: null, excerpt: null, decision_id: null, issue_number: null, pr_number: null, pr_url: null, patch: null, files: null, lint_task: null, lint_round: null, lint_state: null, session: null, created_at: at } as const;
@@ -336,7 +343,10 @@ export const commands = {
       if (i < 0 || !args[i + 1]) throw new Error("usage: main-fix --repo R [--apply]");
       const repo = args[i + 1]!;
       const db = connect();
-      if (args.includes("--apply")) { await runMainFix(db, { repo }); return; }
+      if (args.includes("--apply")) {
+        await withWorkflowProvider(db, "main-fix", () => runMainFix(db, { repo }));
+        return;
+      }
       for (const r of db.prepare('SELECT head_sha, "check", verdict, state, reason FROM main_fixes WHERE repo = ? ORDER BY created_at DESC LIMIT 50').all(repo) as { head_sha: string; check: string; verdict: string; state: string; reason: string | null }[])
         console.log(`${r.head_sha.slice(0, 8)}\t${r.check}\t${r.verdict}\t${r.state}\t${r.reason ?? ""}`);
     },

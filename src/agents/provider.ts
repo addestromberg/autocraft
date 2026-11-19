@@ -4,7 +4,7 @@ import type { ModelProvider, ModelProviderSettings } from "../../web/src/api/typ
 const key = "model_provider_settings";
 export const standaloneModelWorkflows = ["discord-search", "discord-issue", "discord-signal", "reference-lint"] as const;
 const codexWorkflows = new Set(["classify-new", "classify-all", "prioritize", "dupes", "referee", "areas-rescan", "decide", "opus-review", "premerge", "postmerge", "security-scan",
-  "fixissue", "fixissue-collect", "fixup", "conversation", "areas-propose", "areas-suggest", "dupes-compare", ...standaloneModelWorkflows]);
+  "fixissue", "fixissue-collect", "fixup", "cifix", "main-fix", "conversation", "areas-propose", "areas-suggest", "dupes-compare", ...standaloneModelWorkflows]);
 
 export const supportsCodexWorkflow = (name: string): boolean => codexWorkflows.has(name);
 

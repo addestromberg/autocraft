@@ -8,6 +8,7 @@ import { setCodexModelSettings } from "../src/agents/codex/models.ts";
 import { setJevEnabled } from "../src/agents/jev.ts";
 import { listRuns } from "../src/agents/runs.ts";
 import { runModelStep, runTiered } from "../src/agents/step.ts";
+import { askTextModel } from "../src/agents/text-call.ts";
 import { CLASSIFY_HAIKU, PRIORITY } from "../src/agents/steps.ts";
 import type { Item } from "../src/classify/parse.ts";
 import { setRunner } from "../src/classify/run.ts";
@@ -102,6 +103,28 @@ test("manual workflows pin provider and model independently across simultaneous 
       return [currentModelProvider(), currentCodexModel()];
     });
     assert.deepEqual(await Promise.all([conversation, proposal]), [["codex", "first-model"], ["claude", undefined]]);
+  } finally {
+    db.close();
+  }
+});
+
+test("Codex repair refuses to generate a patch when its pinned checkout is unavailable", async () => {
+  const db = connect(":memory:");
+  try {
+    setProviderSettings(db, { defaultProvider: "claude", workflows: { fixup: "codex", fixissue: "codex" } });
+    await assert.rejects(
+      withWorkflowProvider(db, "fixup", () => askTextModel("fixup.patch", "sonnet", [], db)),
+      /requires a scoped checkout for fixup\.patch/,
+    );
+    await assert.rejects(
+      withWorkflowProvider(db, "fixup", () => askTextModel("fixup.conflict", "sonnet", [], db)),
+      /requires a scoped checkout for fixup\.conflict/,
+    );
+    await assert.rejects(
+      withWorkflowProvider(db, "fixissue", () => askTextModel("fixissue.patch", "sonnet", [], db)),
+      /requires a scoped checkout for fixissue\.patch/,
+    );
+    assert.equal(listRuns(db, {}).runs.length, 0);
   } finally {
     db.close();
   }

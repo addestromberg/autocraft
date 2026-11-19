@@ -4,6 +4,8 @@
 // worker tasks are recorded as for any run. The pipeline setting and the stage's limits do not apply.
 import { mkdirSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
+import { currentModelProvider } from "../agents/call.ts";
+import { isQuiet } from "../security/quiet.ts";
 import { getTask, TERMINAL } from "../build/tasks.ts";
 import { CheckTool, applyCheck, refusal } from "../checktool/index.ts";
 import { CHECK_DIFF_CAP, CHECK_PATCH_CAP } from "../patchcheck/types.ts";
@@ -28,6 +30,8 @@ const BASE_QUERY = `query($owner: String!, $name: String!, $n: Int!) { repositor
 
 export async function runFixupTry(db: DatabaseSync, repo: string, number: number, d: FixupDeps = defaultDeps(), log: (line: string) => void = console.log): Promise<number> {
   const ref = `${repo}#${number}`;
+  const codex = currentModelProvider() === "codex";
+  if (codex && isQuiet(db, repo, number)) throw new Error(`${ref}: quiet PR excluded from Codex repair`);
   const item = db.prepare("SELECT head_oid, title FROM items WHERE repo = ? AND number = ? AND kind = 'pr'").get(repo, number) as { head_oid: string | null; title: string | null } | undefined;
   if (!item?.head_oid) throw new Error(`${ref} is not a PR in the database`);
   const review = db.prepare("SELECT fixes, reason, verdict FROM final_reviews WHERE repo = ? AND number = ? AND head_oid = ? ORDER BY at DESC LIMIT 1").get(repo, number, item.head_oid) as { fixes: string | null; reason: string | null; verdict: string } | undefined;
@@ -72,7 +76,8 @@ export async function runFixupTry(db: DatabaseSync, repo: string, number: number
   log(`model call took ${Math.round((Date.now() - t0) / 1000)} s`);
 
   const offered = checkout !== undefined && CLAUDE_PROMPTS["fixup.patch"].sandbox?.check === true;
-  log(`\ntools given to the model: ${offered ? `${[...CLAUDE_PROMPTS["fixup.patch"].sandbox!.tools, "Agent", "mcp__build__check"].join(", ")} (check offered; commands that returned a result: ${[...tool.ran].join(", ") || "none"})` : "none (no checkout, so no sandbox and no check tool)"}`);
+  if (codex) log("\nCodex uses scoped checkout tools. Lint runs on the worker after patch validation.");
+  else log(`\ntools given to the model: ${offered ? `${[...CLAUDE_PROMPTS["fixup.patch"].sandbox!.tools, "Agent", "mcp__build__check"].join(", ")} (check offered; commands that returned a result: ${[...tool.ran].join(", ") || "none"})` : "none (no checkout, so no sandbox and no check tool)"}`);
   const runs = db.prepare("SELECT id, summary FROM agent_runs WHERE prompt_id IN ('fixup.patch') AND id > ? ORDER BY id").all(before0) as { id: number; summary: string | null }[];
   for (const r of runs) log(`model call: agent run ${r.id}: ${r.summary ?? "no summary"}`);
   log("tool calls:");

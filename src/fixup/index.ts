@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { getTask, TERMINAL } from "../build/tasks.ts";
-import { askClaude } from "../classify/run.ts";
+import { askTextModel } from "../agents/text-call.ts";
 import { REPO_PATH } from "../sandbox/command.ts";
 import { checkoutForPr } from "../sandbox/index.ts";
 import { audit } from "../dash/audit.ts";
@@ -57,7 +57,7 @@ import { commentApprovalOf } from "../act/approval.ts";
 import { jobItem } from "../runner/job-items.ts";
 import { ownerOf } from "../owners.ts";
 import { leaseItem } from "../runner/leases.ts";
-import { isHalt, queueRoom } from "../agents/call.ts";
+import { currentModelProvider, isHalt, queueRoom, recordedModel, withWorkflowProvider } from "../agents/call.ts";
 import { pushesUnsettled } from "../push-outcomes.ts";
 import { POOL_MAX, pool } from "../classify/run.ts";
 
@@ -94,9 +94,9 @@ export type FixupDeps = {
 export function defaultDeps(): FixupDeps {
   return {
     querier: new Client(1000), exec, fetchDiff: ghDiff, now: () => new Date(), root: fixupDir(),
-    ask: async (db, input, checkout, tool, session) => (await askClaude("fixup.patch", PROMPT.models[0]!, input, db, { checkout, check: tool, session }))?.text ?? null,
-    check: async (db, input, checkout) => (await askClaude("fixup.check", CHECK.models[0]!, input, db, { checkout }))?.text ?? null,
-    resolve: async (db, input, checkout, session) => (await askClaude("fixup.conflict", CONFLICT.models[0]!, input, db, { checkout, session }))?.text ?? null,
+    ask: async (db, input, checkout, tool, session) => (await askTextModel("fixup.patch", PROMPT.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout } : { checkout, check: tool, session }))?.text ?? null,
+    check: async (db, input, checkout) => (await askTextModel("fixup.check", CHECK.models[0]!, input, db, { checkout }))?.text ?? null,
+    resolve: async (db, input, checkout, session) => (await askTextModel("fixup.conflict", CONFLICT.models[0]!, input, db, currentModelProvider() === "codex" ? { checkout } : { checkout, session }))?.text ?? null,
     checkout: (r, n, h) => checkoutForPr(r, n, h, console.log),
   };
 }
@@ -459,6 +459,7 @@ async function runFixupWith(db: DatabaseSync, params: FixupParams, log: (line: s
       const checkout = (await d.checkout?.(repo, c.number, head)) ?? undefined;
       const repoDir = checkout ? { repo_dir: REPO_PATH } : {};
       const quiet = isQuiet(db, repo, c.number);
+      if (quiet && currentModelProvider() === "codex") { log(`  ${ref}: quiet PR excluded from Codex repair`); return; }
       const shown: FixupPr["files"] = [];
       let total = 0, tooBig: string | null = null, bad: string | null = null;
       for (const path of files) {
@@ -543,7 +544,7 @@ async function runFixupWith(db: DatabaseSync, params: FixupParams, log: (line: s
         if (checkReply === null) { fail("failed", "the patch check gave no answer"); return; }
         const verdict = parseCheck(checkReply);
         if (!verdict.ok) { fail("failed", `the patch check gave no valid answer: ${verdict.error}`); return; }
-        recordCheck(db, { kind: "fixup", repo, number: c.number, subject: head, patch: v.patch, round: c.attempt, model: CHECK.models[0]!, check: verdict.check, at: at() });
+        recordCheck(db, { kind: "fixup", repo, number: c.number, subject: head, patch: v.patch, round: c.attempt, model: recordedModel(CHECK.models[0]!), check: verdict.check, at: at() });
         audit(db, ACTOR, "fixup-check", ref, { run: runId, head, verdict: verdict.check.verdict, reasons: verdict.check.reasons });
         if (verdict.check.verdict === "reject") { fail("rejected", `Opus rejected the patch: ${checkLine(verdict.check)}`); return; }
       }
@@ -726,12 +727,14 @@ function parseArgs(args: string[]): { repo: string; limit?: number; apply: boole
 
 export const commands = {
   fixup: {
-    summary: "fixup --repo R [--limit N] [--apply] | fixup repost <repo>#<n> [--apply] | fixup try <repo>#<n>: push the review's small fixes to take-fix PRs we may push to; repost edits our ask comment to the full fix list (dry run unless --apply); try runs the patch step for one PR with the check tool and prints the tool calls, the patch, the Opus check and the lint result, storing and pushing nothing",
+    summary: "fixup --repo R [--limit N] [--apply] | fixup repost <repo>#<n> [--apply] | fixup try <repo>#<n>: push the review's small fixes to take-fix PRs we may push to; repost edits our ask comment to the full fix list (dry run unless --apply); try runs the patch step for one PR and prints the tool calls, the patch, the model check and the lint result, storing and pushing nothing",
     async run(args: string[]): Promise<void> {
       if (args[0] === "try") {
         const m = /^([^#\s]+)#(\d+)$/.exec(args[1] ?? "");
         if (!m || args.length !== 2) throw new Error("usage: autocraft fixup try <repo>#<n>");
-        process.exitCode = await (await import("./try.ts")).runFixupTry(connect(), m[1]!, Number(m[2]));
+        const db = connect();
+        const { runFixupTry } = await import("./try.ts");
+        process.exitCode = await withWorkflowProvider(db, "fixup", () => runFixupTry(db, m[1]!, Number(m[2])));
         return;
       }
       if (args[0] === "repost") {
@@ -743,7 +746,8 @@ export const commands = {
         return;
       }
       const f = parseArgs(args);
-      await runFixup(connect(), { repo: f.repo, limit: f.limit, dryRun: !f.apply });
+      const db = connect();
+      await withWorkflowProvider(db, "fixup", () => runFixup(db, { repo: f.repo, limit: f.limit, dryRun: !f.apply }));
     },
   },
   "push-approval": {

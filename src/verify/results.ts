@@ -7,8 +7,9 @@ import type { DatabaseSync } from "node:sqlite";
 import type { BuildTask, TaskResult, TaskStep } from "../../web/src/api/types.ts";
 import { BuildError } from "../build/envs.ts";
 import { TERMINAL, cancelTask, getTask } from "../build/tasks.ts";
-import { add, askClaude, POOL_MAX, pool, saveUsage, type Usage } from "../classify/run.ts";
-import { queueRoom } from "../agents/call.ts";
+import { askTextModel } from "../agents/text-call.ts";
+import { add, POOL_MAX, pool, saveUsage, type Usage } from "../classify/run.ts";
+import { queueRoom, recordedModel } from "../agents/call.ts";
 import { CLAUDE_PROMPTS } from "../prompts/index.ts";
 import { scrub } from "../runner/scrub.ts";
 import { cloneTask } from "./tasks.ts";
@@ -191,8 +192,8 @@ export async function summariseFailure(db: DatabaseSync, v: { repo: string; numb
     ref: `${v.repo}#${v.number}`, step: f.step, command: scrub((step?.cmd ?? []).join(" ")), log: scrub(stepLog(db, taskId, f.step)),
   };
   const start = now();
-  const reply = await askClaude("verify.summary", deps.model, [input], db);
-  saveUsage(db, runId, `verify-collect-${v.number}`, "verify", deps.model, reply ? 1 : 0, reply?.usage ?? ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null } as Usage), start, now());
+  const reply = await askTextModel("verify.summary", deps.model, [input], db);
+  saveUsage(db, runId, `verify-collect-${v.number}`, "verify", recordedModel(deps.model), reply ? 1 : 0, reply?.usage ?? ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null } as Usage), start, now());
   const text = reply ? scrub(cut(reply.text)) : "";
   return text || fallbackSummary(f);
 }

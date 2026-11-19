@@ -32,6 +32,8 @@ export type DecideParams = {
   run?: string;
   /** Called with the running count of items sent to the model. */
   onSent?: (n: number) => void;
+  onProgress?: (line: string) => void;
+  cancelled?: () => boolean;
   /** Read-only checkout for the prepare call (a PR's head, else the default branch), or null to ask without tools. Default: fetched from GitHub. */
   checkout?: (repo: string, number: number, head: string | null) => Promise<string | null>;
   /** PR diffs for the prepare call and the conversation's item block. Default: the diff cache or GitHub. */
@@ -119,7 +121,7 @@ export async function runDecide(db: DatabaseSync, params: DecideParams = {}, log
         return import("../dupes/compare.ts").then((m) => m.baseCheckout(db, repo));
       }),
       diff: params.diff ?? ((r, n, h) => import("../conversations/run.ts").then((m) => m.githubDiff(r, n, h))),
-      usageRun, log, onSent: () => params.onSent?.(++sent),
+      usageRun, log, onSent: () => params.onSent?.(++sent), onProgress: params.onProgress, cancelled: params.cancelled,
     });
     result.prepared = r.stored;
   }

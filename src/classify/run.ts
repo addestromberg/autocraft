@@ -316,7 +316,7 @@ export function claudeCwd(): string {
 export type AskOptions = { check?: CheckTool; lint?: Lint; onProgress?: (line: string) => void; checkout?: string; reference?: string; maxWaitMs?: number; shared?: { name: string; dir: string }[]; session?: SessionAsk; itemTools?: { mounts: { host: string; path: string }[]; mcpServers: Record<string, unknown> } | null };
 
 /** The repo-docs directory for the item's repository, or undefined (no docs, or a checkout that is not one of ours). */
-async function docsOf(db: DatabaseSync, checkout: string): Promise<string | undefined> {
+export async function docsOf(db: DatabaseSync, checkout: string): Promise<string | undefined> {
   const repo = repoOfCheckout(checkout);
   if (!repo) return undefined;
   const branch = (db.prepare("SELECT default_branch FROM main.repos WHERE name = ?").get(repo) as { default_branch: string | null } | undefined)?.default_branch ?? "main";

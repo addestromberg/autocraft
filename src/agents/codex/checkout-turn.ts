@@ -4,6 +4,7 @@ import type { ItemRef } from "../../../web/src/api/types.ts";
 import type { ClaudePromptId } from "../../prompts/index.ts";
 import { stepOf } from "../call.ts";
 import { finishRun, insertRun, setRunProgress } from "../runs.ts";
+import { scrub } from "../../runner/scrub.ts";
 import type { openCodexReadSession } from "./read-run.ts";
 
 type Session = Awaited<ReturnType<typeof openCodexReadSession>>;
@@ -24,8 +25,9 @@ export async function recordCodexCheckoutTurn(db: DatabaseSync, session: Session
         onProgress?.(line);
       },
     });
-    finishRun(db, run, { state: "done", output: reply.text });
-    return reply;
+    const text = scrub(reply.text);
+    finishRun(db, run, { state: "done", output: text });
+    return { text };
   } catch (error) {
     finishRun(db, run, { state: "failed", error: error instanceof Error ? error.message : "Codex checkout turn failed" });
     throw error;

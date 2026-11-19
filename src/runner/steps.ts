@@ -262,6 +262,8 @@ export const STEPS: StepDef[] = [
         repos: ctx.params.repo ? [String(ctx.params.repo)] : undefined,
         limit: Number(ctx.params.limit),
         onSent: ctx.handled,
+        onProgress: ctx.progress,
+        cancelled: ctx.stopping,
       }, ctx.log);
       if (r.usageRun) ctx.usageRun(r.usageRun);
       return `asked ${r.asked} decisions; ${r.prepared} prepared`;

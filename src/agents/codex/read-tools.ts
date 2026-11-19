@@ -6,11 +6,13 @@ import { isInstructionPath } from "../../sandbox/instruction-paths.ts";
 
 const MAX_READ_BYTES = 32_000;
 const MAX_ENTRIES = 200;
-const filePath = { type: "string", description: "A path relative to the pinned checkout." };
+const filePath = { type: "string", description: "A path relative to the pinned checkout, or under an explicitly authorized /repo, /reference, or /repo-docs root." };
 const itemTool = TOOLS.find((tool) => tool.name === "item")!;
 
 export type CodexReadScope = {
   checkout: string;
+  reference?: string;
+  repoDocs?: string;
   items?: { snapshot: string; refs: readonly { repo: string; number: number }[] };
 };
 
@@ -21,10 +23,27 @@ const safe = (path: string): boolean => safePath(path) && !/[\r\n]/.test(path) &
 export function codexReadTools(scope: CodexReadScope) {
   const root = realpathSync(scope.checkout);
   if (root === sep) throw new Error("A pinned checkout is required");
-  const scopedPath = (path: string) => {
+  const roots = new Map([["repo", root]]);
+  for (const [name, directory] of [["reference", scope.reference], ["repo-docs", scope.repoDocs]] as const) {
+    if (!directory) continue;
+    const resolved = realpathSync(directory);
+    if (resolved === sep) throw new Error("A scoped reference directory is required");
+    roots.set(name, resolved);
+  }
+  const scopedPath = (value: string, rootAllowed = false) => {
+    let base = root;
+    let path = value;
+    if (value.startsWith("/")) {
+      const [, name, ...parts] = value.split("/");
+      const found = roots.get(name!);
+      if (!found) throw new Error();
+      base = found;
+      path = parts.join("/");
+    }
+    if (rootAllowed && !path) return base;
     if (!safe(path)) throw new Error();
-    const target = resolve(root, path);
-    if (!target.startsWith(root + sep) || realpathSync(target) !== target) throw new Error();
+    const target = resolve(base, path);
+    if (!target.startsWith(base + sep) || realpathSync(target) !== target) throw new Error();
     return target;
   };
   const definitions = [
@@ -53,8 +72,8 @@ export function codexReadTools(scope: CodexReadScope) {
         }
         if (name === "list_checkout_directory" && (input.path === undefined || typeof input.path === "string") && Object.keys(input).every((key) => key === "path")) {
           const path = input.path ?? "";
-          const entries = readdirSync(path ? scopedPath(path) : root, { withFileTypes: true })
-            .filter((entry) => (entry.isFile() || entry.isDirectory()) && safe(path ? `${path}/${entry.name}` : entry.name))
+          const entries = readdirSync(scopedPath(path, true), { withFileTypes: true })
+            .filter((entry) => (entry.isFile() || entry.isDirectory()) && safe(entry.name))
             .sort((a, b) => a.name.localeCompare(b.name));
           return { text: frame("checkout directory", entries.slice(0, MAX_ENTRIES).map((entry) => entry.name + (entry.isDirectory() ? "/" : "")).join("\n") +
             (entries.length > MAX_ENTRIES ? "\n[additional entries omitted]" : "")) };

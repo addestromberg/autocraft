@@ -1,34 +1,83 @@
 import type { DatabaseSync } from "node:sqlite";
-import { promptVersion, refsOf, type AskOptions, type Reply } from "../../classify/run.ts";
+import { existsSync } from "node:fs";
+import { docsOf, promptVersion, refsOf, type AskOptions, type LintedReply } from "../../classify/run.ts";
 import { renderClaude, type ClaudeInput, type ClaudePromptId } from "../../prompts/index.ts";
 import { currentCodexModel, modelCallStopping, stepOf, StoppedError } from "../call.ts";
 import { finishRun, insertRun } from "../runs.ts";
 import { runCodex } from "./adapter.ts";
+import { recordCodexCheckoutTurn } from "./checkout-turn.ts";
+import { openCodexReadSession } from "./read-run.ts";
+import { snapshotFile } from "../../itemtools/snapshot.ts";
+import { fixTurnMessage, mergeFixFields, needsFixTurn } from "../../replylint.ts";
+import { scrub } from "../../runner/scrub.ts";
 
-const supported = new Set<ClaudePromptId>(["classify.haiku", "priority.haiku", "dupes.haiku", "areas.haiku", "referee.sonnet"]);
+const supported = new Set<ClaudePromptId>(["classify.haiku", "priority.haiku", "dupes.haiku", "areas.haiku", "referee.sonnet", "decide.prepare", "lint.reference.haiku"]);
+const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null };
 
-export async function runCodexStep<K extends ClaudePromptId>(id: K, input: ClaudeInput[K], db: DatabaseSync, opts: AskOptions): Promise<Reply> {
-  if (!supported.has(id) || opts.checkout || opts.check || opts.session || opts.lint) {
+export async function runCodexStep<K extends ClaudePromptId>(id: K, input: ClaudeInput[K], db: DatabaseSync, opts: AskOptions): Promise<LintedReply> {
+  if (!supported.has(id) || opts.check || opts.session || (id !== "decide.prepare" && (opts.checkout || opts.lint))) {
     throw new Error(`Codex is selected but does not yet support ${id}`);
   }
   if (modelCallStopping()) throw new StoppedError("the job is stopping");
   const model = currentCodexModel();
   const prompt = renderClaude(id, input);
   const context = stepOf(id);
-  const run = insertRun(db, { ...context, promptId: id, promptVersion: promptVersion(id), provider: "codex",
-    model: model ?? "codex", accountId: null, items: refsOf(input), prompt });
+  const items = refsOf(input);
   const controller = new AbortController();
   const timer = setInterval(() => { if (modelCallStopping()) controller.abort(); }, 500);
   try {
-    const reply = await runCodex({ prompt, model, signal: controller.signal });
-    finishRun(db, run, { state: "done", tokens: reply.usage, output: reply.text });
-    return { text: reply.text, usage: reply.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null } };
+    if (opts.checkout) {
+      return await checkoutReply(db, id, prompt, items, opts.checkout, opts, model, controller.signal);
+    }
+    const run = insertRun(db, { ...context, promptId: id, promptVersion: promptVersion(id), provider: "codex",
+      model: model ?? "codex", accountId: null, items, prompt });
+    try {
+      const reply = await runCodex({ prompt, model, signal: controller.signal });
+      const text = scrub(reply.text);
+      const problems = await opts.lint?.(text, "fix");
+      finishRun(db, run, { state: "done", tokens: reply.usage, output: text,
+        summary: id === "decide.prepare" ? "Prepared without a checkout" : undefined });
+      return { text, usage: reply.usage ?? zeroUsage, ...(problems && { problems }) };
+    } catch (error) {
+      finishRun(db, run, { state: "failed", error: error instanceof Error ? error.message : "Codex execution failed" });
+      throw error;
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Codex execution failed";
-    finishRun(db, run, { state: "failed", error: message });
     if (controller.signal.aborted) throw new StoppedError("the job is stopping");
     throw new Error(`${context.step}: ${message}`);
   } finally {
     clearInterval(timer);
+  }
+}
+
+async function checkoutReply(db: DatabaseSync, id: ClaudePromptId, prompt: string, items: ReturnType<typeof refsOf>,
+  checkout: string, opts: AskOptions, model: string | undefined, signal: AbortSignal): Promise<LintedReply> {
+  const snapshot = snapshotFile();
+  const session = await openCodexReadSession({ model, signal, scope: {
+    checkout, reference: opts.reference, repoDocs: await docsOf(db, checkout),
+    ...(opts.itemTools !== null && existsSync(snapshot) && { items: { snapshot, refs: items } }),
+  } });
+  try {
+    const turn = { promptId: id, items, onProgress: opts.onProgress };
+    const reply = await recordCodexCheckoutTurn(db, session, { ...turn, prompt: `${prompt}\n\nUse the scoped file and item tools for available repository context. Report any claims you cannot verify from that context.` });
+    const lint = opts.lint;
+    const first = await lint?.(reply.text, "first");
+    if (!lint || !first?.length) return { ...reply, usage: zeroUsage, ...(first && { problems: first }) };
+    if (needsFixTurn(first)) {
+      try {
+        const fix = await recordCodexCheckoutTurn(db, session, { ...turn, prompt: fixTurnMessage(first), followUp: true });
+        const text = mergeFixFields(reply.text, fix.text, first);
+        if (text !== null) {
+          const problems = await lint(text, "fix");
+          if (problems !== null) return { text, usage: zeroUsage, problems, fixTurn: true };
+        }
+      } catch (error) {
+        if (signal.aborted) throw error;
+      }
+    }
+    return { ...reply, usage: zeroUsage, problems: (await lint(reply.text, "fix")) ?? first, fixTurn: needsFixTurn(first) };
+  } finally {
+    await session.close();
   }
 }

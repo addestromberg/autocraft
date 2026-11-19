@@ -12,6 +12,22 @@ Local mirror of every storytold issue and PR, the triage pipeline's state, and t
 - `autocraft merge --repo R [--limit N] [--apply]` merges the repo's queued PRs that may merge, through the built-in `autocraft safe-merge` (`$AUTOCRAFT_MERGE_CMD` overrides it with another command that takes `OWNER/REPO PR --squash|--merge --head <sha>` and refuses when the head differs), and asks a Merge? decision for the other taken PRs; without `--apply` it is a dry run. `autocraft queue [--repo R]` prints the merge queue. The runner's `merge` step and the autopilot merge only in repos an operator approved for merging on the Repos page. See docs/pipeline.md, Merge queue.
 - Runner steps (`autocraft runner steps`): `classify-new`, `classify-all`, `embed`, `labels-ensure`, `labels-apply`, `decide`, `opus-review`, `checks` and `merge` (operator only, params `repo` and `limit`; it runs the merge command with `--apply`, so it merges for real).
 
+### Codex adapter development in Incus
+
+Use an issue branch off `codex` and open the PR against `codex`. Install Node 24 or later, npm, and the pnpm version pinned in `package.json`. From the workspace root, run:
+
+```sh
+node --version
+pnpm --version
+codex --version
+pnpm install --frozen-lockfile
+pnpm check
+```
+
+For a live run, verify that the selected sandbox backend can start inside the container. Check for `bwrap` for the local agent sandbox and rootless Podman if testing build workers. Use dedicated development state and record the relevant local test commands and results in the PR.
+
+The fork's **Codex PR check** runs `pnpm check` for same-repository PRs targeting `codex` when they are ready for review and cancels superseded runs. Keep Docker publishing disabled on the fork. Register `codex-dev` in a dedicated runner environment with Node and npm, separate from developer credentials and AutoCraft development state. Give it the `codex-isolated` label after confirming that the runner cannot read those credentials or state. Verify a PR completes the job before marking the check required for `codex`. Run the full test suite and live checks directly in Incus.
+
 ### Sync
 
 `autocraft sync` (every minute) runs one org-wide GitHub search for items updated since the newest `updatedAt` stored (`org_high_water`) minus 10 minutes, up to the run's start. The search returns at most 1,000 results, so a window with more matches is cut into `updated:A..B` slices, halving until each fits. A one-second slice with more than 1,000 matches is read by listing every tracked repo down to that second (with a logged warning); until the run finishes, neither `org_high_water` nor a repo's `high_water` moves. GitHub's search index can lag, so once an hour (`search_catchup_at`) the same search also re-reads the 6 hours before `org_high_water`, sliced the same way. `org_high_water` moves to the newest `updatedAt` seen, not to the start time. An item whose stored row equals what GitHub returned is not written again. Items of untracked repos are dropped before anything else is done with them. Per-repo passes run only for the first sync, for a repo that was just tracked (tracking clears its `high_water` and `synced_at`) and for `--per-repo`, `--all` and `--repo`.

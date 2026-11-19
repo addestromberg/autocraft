@@ -30,6 +30,7 @@ import type { CompareParsed, ScreenshotParsed } from "./plan.ts";
 import type { VerifyCandidate } from "./candidates.ts";
 import type { VerifyDeps } from "./index.ts";
 import { SCREENSHOT_STEP, cloneTask, queueScreenshotTasks } from "./tasks.ts";
+import { currentModelProvider } from "../agents/call.ts";
 import type { ScreenshotCompareInput, ScreenshotPlanInput, ShotStep } from "./types.ts";
 import type { CollectDeps } from "./results.ts";
 
@@ -169,6 +170,7 @@ export function screenshotsDue(db: DatabaseSync): boolean {
 
 /** The default comparison: Opus reads the image pairs from `dir`, mounted as the call's read-only checkout (a plain directory works: nothing of the sandbox needs a repository). */
 async function compareWithModel(db: DatabaseSync, input: ScreenshotCompareInput, ctx: { ref: string; dir: string }, runId: string, n: number): Promise<CompareParsed | null> {
+  if (currentModelProvider() === "codex") throw new Error("Codex screenshot comparison is unavailable");
   const r = await runModelStep(db, VERIFY_COMPARE, { ...input, repo_dir: REPO_PATH }, {
     checkout: ctx.dir, ctx: { ref: ctx.ref },
     usage: { run: runId, agent: `screenshot-compare-${n}`, stage: "verify", items: (ok: boolean) => (ok ? 1 : 0) },

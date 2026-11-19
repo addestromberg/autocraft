@@ -214,7 +214,7 @@ Codex can also review PR heads and merge commits and perform read-only defensive
 Conversation replies, area proposals, and duplicate comparisons support Codex provider overrides.
 Discord drafts, search, signal checks, and reference lint can use Codex for their text judgments.
 Standalone review, decision, and referee commands honor the configured workflow provider and Codex model.
-Codex can prepare ordinary issue, PR, CI, and default-branch repairs using pinned checkouts and the existing build workers. Recent repair retries can resume the same Codex thread.
+Codex can prepare ordinary issue, PR, CI, and default-branch repairs using pinned checkouts and the existing build workers. Recent repair retries can resume the same Codex thread. Codex also supports verification planning and failure summaries.
 
 | Path | Contents |
 |---|---|

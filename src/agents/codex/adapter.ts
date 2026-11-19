@@ -6,7 +6,7 @@ import type { TextAgentAdapter } from "../types.ts";
 import { codexFailure } from "./errors.ts";
 import { account, codexCommand } from "./account.ts";
 
-type CodexRequest = { prompt: string; model?: string; signal?: AbortSignal; timeoutMs?: number };
+type CodexRequest = { prompt: string; model?: string; signal?: AbortSignal; timeoutMs?: number; images?: string[] };
 type CodexReply = { text: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: null } };
 
 function readReply(stdout: string): CodexReply {
@@ -34,7 +34,7 @@ function readReply(stdout: string): CodexReply {
 }
 
 /** The first adapter supports prompt-only calls with no repository or tools. */
-export const runCodex: TextAgentAdapter<CodexRequest, CodexReply> = async ({ prompt, model, signal, timeoutMs = 120_000 }) => {
+export const runCodex: TextAgentAdapter<CodexRequest, CodexReply> = async ({ prompt, model, signal, timeoutMs = 120_000, images }) => {
   if ((await account("")).state !== "connected") throw new Error("Connect a Codex account in Accounts before running Codex");
   const { bin, options } = codexCommand();
   const cwd = await mkdtemp(join(tmpdir(), "autocraft-codex-"));
@@ -47,7 +47,7 @@ export const runCodex: TextAgentAdapter<CodexRequest, CodexReply> = async ({ pro
       "-c", "suppress_unstable_features_warning=true",
       "-c", 'approval_policy="never"', "-c", 'web_search="disabled"',
       "-c", 'cli_auth_credentials_store="file"',
-      ...(model ? ["--model", model] : []), "-",
+      ...(model ? ["--model", model] : []), ...(images?.length ? [...images.map((file) => `--image=${file}`), "--"] : []), "-",
     ];
     const stdout = await new Promise<string>((resolve, reject) => {
       const child = execFile(bin, args, { cwd, env: options.env, signal, timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, output, stderr) => {
